@@ -18,7 +18,7 @@ app.add_middleware(
 )
 
 # 🔹 Create DB tables
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 # 🔹 Include routes
 app.include_router(email_routes.router)
