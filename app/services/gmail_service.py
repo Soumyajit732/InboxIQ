@@ -102,11 +102,10 @@ def fetch_threads(max_threads=20):
     thread_map = {}
     next_page_token = None
 
-    # 🔥 KEEP FETCHING UNTIL WE GET REQUIRED THREADS
     while len(thread_map) < max_threads:
         response = service.users().messages().list(
             userId="me",
-            maxResults=50,  # batch size
+            maxResults=50,
             pageToken=next_page_token,
             q="in:inbox -category:promotions"
         ).execute()
@@ -124,8 +123,8 @@ def fetch_threads(max_threads=20):
             thread_id = msg_data["threadId"]
             timestamp = int(msg_data["internalDate"])
 
-            # 🔥 skip if already have enough messages for this thread
-            if thread_id in thread_map and len(thread_map) >= max_threads:
+            # skip new threads if limit reached
+            if thread_id not in thread_map and len(thread_map) >= max_threads:
                 continue
 
             raw_msg = base64.urlsafe_b64decode(msg_data["raw"].encode("ASCII"))
@@ -141,30 +140,29 @@ def fetch_threads(max_threads=20):
             if not cleaned_text.strip():
                 cleaned_text = extracted_text
 
+            # 🔥 keep only latest message per thread
             if thread_id not in thread_map:
-                thread_map[thread_id] = []
-
-            thread_map[thread_id].append({
-                "text": cleaned_text,
-                "timestamp": timestamp
-            })
+                thread_map[thread_id] = {
+                    "text": cleaned_text,
+                    "timestamp": timestamp
+                }
+            else:
+                if timestamp > thread_map[thread_id]["timestamp"]:
+                    thread_map[thread_id] = {
+                        "text": cleaned_text,
+                        "timestamp": timestamp
+                    }
 
         next_page_token = response.get("nextPageToken")
-
         if not next_page_token:
             break
 
-    # 🔥 FORMAT OUTPUT
     output = []
 
     for thread_id, thread in thread_map.items():
-        thread.sort(key=lambda x: x["timestamp"])
-
-        ordered_texts = [msg["text"] for msg in thread]
-
         output.append({
             "thread_id": thread_id,
-            "messages": ordered_texts
+            "messages": [thread["text"]]
         })
 
     return output
