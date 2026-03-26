@@ -37,18 +37,16 @@ def analyze_email(data: dict):
 
 
 @router.get("/gmail")
-def get_gmail_analysis():
+def get_gmail_analysis(token: str):
     try:
         now = time.time()
 
-        # ✅ 1. RETURN CACHE (within 60 sec)
         if CACHE["data"] and (now - CACHE["timestamp"] < 60):
             print("⚡ Returning cached data")
             return CACHE["data"]
 
-        threads = fetch_threads(20)  # 🔥 reduced for speed
+        threads = fetch_threads(token, 20)  # ✅ FIXED
 
-        # 🔥 2. PARALLEL PROCESSING
         def process_thread(t):
             messages = t.get("messages", [])
             thread_id = t.get("thread_id")
@@ -67,7 +65,6 @@ def get_gmail_analysis():
         with ThreadPoolExecutor(max_workers=5) as executor:
             results = list(filter(None, executor.map(process_thread, threads)))
 
-        # 🔥 3. PIPELINE
         results = filter_low_confidence(results)
         results = sort_by_priority(results)
 
@@ -76,7 +73,6 @@ def get_gmail_analysis():
             "tasks": results
         }
 
-        # 🔥 4. SAVE CACHE
         CACHE["data"] = response
         CACHE["timestamp"] = now
 

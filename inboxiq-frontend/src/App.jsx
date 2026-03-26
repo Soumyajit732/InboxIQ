@@ -211,7 +211,12 @@ export default function App() {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://127.0.0.1:8000/gmail");
+      const token = localStorage.getItem("token");
+  
+      const res = await axios.get(
+        `https://inboxiq-backend-10oo.onrender.com/gmail?token=${token}`
+      );
+  
       setTasks(res.data.tasks || []);
     } catch (err) {
       console.error(err);
@@ -226,6 +231,18 @@ export default function App() {
     const handler = () => { if (window.innerWidth >= 768) setMenuOpen(false); };
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+  
+    if (token) {
+      localStorage.setItem("token", token);
+  
+      // clean URL
+      window.history.replaceState({}, document.title, "/");
+    }
   }, []);
 
   return (
