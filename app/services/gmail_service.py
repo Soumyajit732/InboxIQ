@@ -1,36 +1,14 @@
-import os.path
 import base64
 from email import message_from_bytes
-
 from bs4 import BeautifulSoup
 
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-
-# 🔹 AUTH
-def get_gmail_service():
-    creds = None
-
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "app/services/credentials.json", SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-
+# 🔹 CREATE GMAIL SERVICE USING ACCESS TOKEN
+def get_gmail_service(access_token):
+    creds = Credentials(token=access_token)
     return build("gmail", "v1", credentials=creds)
 
 
@@ -39,28 +17,27 @@ def clean_email_body(body):
     try:
         soup = BeautifulSoup(body, "html.parser")
         text = soup.get_text(separator=" ")
-        text = " ".join(text.split())  # remove extra spaces
-        return text
+        return " ".join(text.split())
     except:
-        return body  # fallback
+        return body
 
 
-# 🔹 FILTER SPAM (RELAXED)
+# 🔹 FILTER USEFUL EMAILS
 def is_useful_email(text):
     text = text.lower()
 
-    # allow important keywords
+    # allow important emails
     if any(word in text for word in ["meeting", "deadline", "submit", "project"]):
         return True
 
-    # block only extreme spam
+    # block obvious spam
     if "unsubscribe" in text and "offer" in text:
         return False
 
     return True
 
 
-# 🔹 EXTRACT TEXT (FIXED — NO EARLY RETURN)
+# 🔹 EXTRACT BODY FROM EMAIL
 def extract_body(email_msg):
     text_parts = []
 
@@ -79,10 +56,7 @@ def extract_body(email_msg):
 
                 decoded = payload.decode(errors="ignore")
 
-                if content_type == "text/plain":
-                    text_parts.append(decoded)
-
-                elif content_type == "text/html":
+                if content_type in ["text/plain", "text/html"]:
                     text_parts.append(decoded)
 
             except:
@@ -95,9 +69,9 @@ def extract_body(email_msg):
     return "\n".join(text_parts)
 
 
-# 🔥 MAIN FUNCTION
-def fetch_threads(max_threads=20):
-    service = get_gmail_service()
+# 🔥 MAIN FUNCTION (FIXED)
+def fetch_threads(access_token, max_threads=20):
+    service = get_gmail_service(access_token)
 
     thread_map = {}
     next_page_token = None
@@ -117,15 +91,13 @@ def fetch_threads(max_threads=20):
                 break
 
             msg_data = service.users().messages().get(
-                userId="me", id=msg["id"], format="raw"
+                userId="me",
+                id=msg["id"],
+                format="raw"
             ).execute()
 
             thread_id = msg_data["threadId"]
             timestamp = int(msg_data["internalDate"])
-
-            # skip new threads if limit reached
-            if thread_id not in thread_map and len(thread_map) >= max_threads:
-                continue
 
             raw_msg = base64.urlsafe_b64decode(msg_data["raw"].encode("ASCII"))
             email_msg = message_from_bytes(raw_msg)
@@ -140,7 +112,7 @@ def fetch_threads(max_threads=20):
             if not cleaned_text.strip():
                 cleaned_text = extracted_text
 
-            # 🔥 keep only latest message per thread
+            # 🔥 store latest message per thread
             if thread_id not in thread_map:
                 thread_map[thread_id] = {
                     "text": cleaned_text,
@@ -157,8 +129,8 @@ def fetch_threads(max_threads=20):
         if not next_page_token:
             break
 
+    # 🔥 FORMAT OUTPUT
     output = []
-
     for thread_id, thread in thread_map.items():
         output.append({
             "thread_id": thread_id,

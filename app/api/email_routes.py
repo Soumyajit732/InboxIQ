@@ -39,13 +39,18 @@ def analyze_email(data: dict):
 @router.get("/gmail")
 def get_gmail_analysis(token: str):
     try:
+        if not token or token == "null":
+            raise HTTPException(status_code=400, detail="Invalid token")
+
+        print("TOKEN RECEIVED:", token[:20])
+
         now = time.time()
 
-        if CACHE["data"] and (now - CACHE["timestamp"] < 60):
+        if token in CACHE and (now - CACHE[token]["timestamp"] < 60):
             print("⚡ Returning cached data")
-            return CACHE["data"]
+            return CACHE[token]["data"]
 
-        threads = fetch_threads(token, 20)  # ✅ FIXED
+        threads = fetch_threads(token, 20)
 
         def process_thread(t):
             messages = t.get("messages", [])
@@ -73,8 +78,10 @@ def get_gmail_analysis(token: str):
             "tasks": results
         }
 
-        CACHE["data"] = response
-        CACHE["timestamp"] = now
+        CACHE[token] = {
+            "data": response,
+            "timestamp": now
+        }
 
         return response
 
