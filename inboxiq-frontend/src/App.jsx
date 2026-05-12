@@ -80,6 +80,19 @@ const ExternalLinkIcon = () => (
   </svg>
 );
 
+const SearchIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 const InboxIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" width="48" height="48" stroke="#c7d2fe" strokeWidth="1.5">
     <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
@@ -264,13 +277,95 @@ function EmptyState({ onRefresh }) {
   );
 }
 
+// ── Search Bar ────────────────────────────────────────────────────────────────
+function SearchBar({ onSearch, onClear, loading }) {
+  const [value, setValue] = useState("");
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (value.trim()) onSearch(value.trim());
+  };
+
+  const clear = () => { setValue(""); onClear(); };
+
+  return (
+    <form className="search-form" onSubmit={submit}>
+      <div className="search-wrap">
+        <span className="search-icon-left"><SearchIcon /></span>
+        <input
+          className="search-input"
+          type="text"
+          placeholder='Search emails — try "project deadline" or "meeting tomorrow"'
+          value={value}
+          onChange={e => setValue(e.target.value)}
+        />
+        {value && (
+          <button type="button" className="search-clear-btn" onClick={clear}>
+            <CloseIcon />
+          </button>
+        )}
+        <button type="submit" className="search-submit-btn" disabled={loading || !value.trim()}>
+          {loading ? "Searching…" : "Search"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ── Search Result Card ────────────────────────────────────────────────────────
+function SearchResultCard({ result }) {
+  const pri = getPriority(result.priority);
+  const { date, countdown, urgency } = formatDeadline(result.deadline);
+  const relevance = Math.round(result.relevance_score * 100);
+  const gmailLink = result.thread_id
+    ? `https://mail.google.com/mail/u/0/#inbox/${result.thread_id}`
+    : null;
+
+  return (
+    <div className={`task-card ${pri.cls}`}>
+      <div className="task-card-inner">
+        <div className="task-top">
+          <span className={`pri-badge ${pri.cls}`}>
+            <span className="pri-dot" style={{ background: pri.dot }} />
+            {pri.label}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="relevance-badge">{relevance}% match</span>
+            {gmailLink && (
+              <a href={gmailLink} target="_blank" rel="noopener noreferrer" className="gmail-link">
+                <ExternalLinkIcon /> Gmail
+              </a>
+            )}
+          </div>
+        </div>
+
+        <h3 className="task-title">{result.task || "Untitled Task"}</h3>
+        {result.summary && <p className="task-body">{result.summary}</p>}
+
+        <div className="task-meta-row">
+          <span className="task-meta-item">
+            <CalendarIcon />
+            <span>{date}</span>
+            {countdown && (
+              <span className={`deadline-chip chip-${urgency}`}>{countdown}</span>
+            )}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tasks,     setTasks]     = useState([]);
-  const [loading,   setLoading]   = useState(false);
-  const [userEmail, setUserEmail] = useState(() => localStorage.getItem("userEmail") || "");
-  const [token,     setToken]     = useState(() => localStorage.getItem("token") || "");
-  const [lastSynced, setLastSynced] = useState(() => localStorage.getItem("lastSynced") || null);
+  const [tasks,         setTasks]         = useState([]);
+  const [loading,       setLoading]       = useState(false);
+  const [userEmail,     setUserEmail]     = useState(() => localStorage.getItem("userEmail") || "");
+  const [token,         setToken]         = useState(() => localStorage.getItem("token") || "");
+  const [lastSynced,    setLastSynced]    = useState(() => localStorage.getItem("lastSynced") || null);
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchQuery,   setSearchQuery]   = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const isAuthenticated = !!token;
 
@@ -285,7 +380,9 @@ export default function App() {
     if (!t) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${BACKEND_URL}/gmail?token=${t}`);
+      const res = await axios.get(`${BACKEND_URL}/gmail`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
       setTasks(res.data.tasks || []);
       const now = new Date().toISOString();
       localStorage.setItem("lastSynced", now);
@@ -296,13 +393,39 @@ export default function App() {
     setLoading(false);
   };
 
+  const handleSearch = async (query) => {
+    setSearchLoading(true);
+    setSearchQuery(query);
+    try {
+      const res = await axios.get(`${BACKEND_URL}/search?q=${encodeURIComponent(query)}&top_k=6`);
+      setSearchResults(res.data.results || []);
+    } catch (err) {
+      console.error(err);
+      setSearchResults([]);
+    }
+    setSearchLoading(false);
+  };
+
+  const handleClearSearch = () => {
+    setSearchResults(null);
+    setSearchQuery("");
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const newToken = params.get("token");
-    const newEmail = params.get("email");
-    if (newToken) { localStorage.setItem("token", newToken); setToken(newToken); }
-    if (newEmail) { localStorage.setItem("userEmail", newEmail); setUserEmail(newEmail); }
-    if (newToken || newEmail) window.history.replaceState({}, "", "/");
+    const code = params.get("code");
+    if (code) {
+      window.history.replaceState({}, "", "/");
+      axios.post(`${BACKEND_URL}/auth/exchange`, { code })
+        .then(res => {
+          const { token: t, email: e } = res.data;
+          localStorage.setItem("token", t);
+          localStorage.setItem("userEmail", e);
+          setToken(t);
+          setUserEmail(e);
+        })
+        .catch(err => console.error("Token exchange failed:", err));
+    }
   }, []);
 
   useEffect(() => { if (isAuthenticated) fetchTasks(); }, [isAuthenticated]);
@@ -624,6 +747,45 @@ export default function App() {
         }
         .empty-refresh-btn:hover { background: #4338ca; transform: translateY(-1px); }
 
+        /* ── Search Bar ── */
+        .search-form { margin-bottom: 28px; }
+        .search-wrap {
+          display: flex; align-items: center; gap: 0;
+          background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px;
+          padding: 0 0 0 14px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.04);
+          transition: border-color .15s, box-shadow .15s;
+        }
+        .search-wrap:focus-within {
+          border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+        }
+        .search-icon-left { color: #94a3b8; display: flex; align-items: center; flex-shrink: 0; }
+        .search-input {
+          flex: 1; border: none; outline: none; background: transparent;
+          font-size: 14px; color: #0f172a; padding: 13px 10px;
+          font-family: inherit;
+        }
+        .search-input::placeholder { color: #94a3b8; }
+        .search-clear-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 28px; height: 28px; border-radius: 6px; border: none;
+          background: transparent; cursor: pointer; color: #94a3b8;
+          flex-shrink: 0; transition: color .15s, background .15s;
+        }
+        .search-clear-btn:hover { background: #f1f5f9; color: #475569; }
+        .search-submit-btn {
+          margin: 6px; padding: 7px 18px; border-radius: 8px; border: none;
+          background: #4f46e5; color: white; font-size: 13px; font-weight: 600;
+          cursor: pointer; transition: background .15s; white-space: nowrap; flex-shrink: 0;
+        }
+        .search-submit-btn:hover:not(:disabled) { background: #4338ca; }
+        .search-submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+        .relevance-badge {
+          font-size: 11px; font-weight: 700; padding: 3px 8px;
+          border-radius: 20px; background: #f0fdf4; color: #16a34a;
+        }
+
         /* ── Responsive ── */
         @media (max-width: 900px) {
           .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -693,6 +855,34 @@ export default function App() {
               <StatCard label="High Priority" value={highCount}      icon={<ZapIcon />}      accent="#ef4444" />
               <StatCard label="Due Today"     value={todayCount}     icon={<CalendarIcon />} accent="#f59e0b" />
             </div>
+
+            {/* Search */}
+            <SearchBar onSearch={handleSearch} onClear={handleClearSearch} loading={searchLoading} />
+
+            {/* Search Results */}
+            {searchResults !== null && (
+              <div style={{ marginBottom: 28 }}>
+                <div className="section-head">
+                  <h2 className="section-title">
+                    Results for &ldquo;{searchQuery}&rdquo;
+                  </h2>
+                  <span className="section-count">{searchResults.length} found</span>
+                </div>
+                <div className="tasks-grid">
+                  {searchLoading ? (
+                    Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
+                  ) : searchResults.length === 0 ? (
+                    <div className="empty-state" style={{ gridColumn: "1/-1" }}>
+                      <div className="empty-icon"><InboxIcon /></div>
+                      <h3 className="empty-title">No results found</h3>
+                      <p className="empty-desc">Try different keywords — the vector index only contains emails loaded since your last sync.</p>
+                    </div>
+                  ) : (
+                    searchResults.map((r, i) => <SearchResultCard key={i} result={r} />)
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Task list */}
             <div className="section-head">

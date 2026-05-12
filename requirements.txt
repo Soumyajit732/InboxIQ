@@ -1,4 +1,5 @@
 fastapi
+chromadb
 uvicorn
 python-dotenv
 openai

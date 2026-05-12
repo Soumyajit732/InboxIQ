@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from typing import List, Dict
 from datetime import datetime
 
@@ -6,6 +6,7 @@ from app.services.nlp_service import analyze_email_thread
 from app.services.gmail_service import fetch_threads
 from app.services import nlp_service, priority_service
 from app.services.thread_service import process_all_threads
+from app.services.vector_store import store_email
 
 from app.db.database import SessionLocal
 from app.db.models import Email
@@ -37,10 +38,15 @@ def analyze_email(data: dict):
 
 
 @router.get("/gmail")
-def get_gmail_analysis(token: str):
+def get_gmail_analysis(authorization: str = Header(...)):
     try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+        token = authorization.removeprefix("Bearer ").strip()
+
         if not token or token == "null":
-            raise HTTPException(status_code=400, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="Invalid token")
 
         print("TOKEN RECEIVED:", token[:20])
 
@@ -72,6 +78,24 @@ def get_gmail_analysis(token: str):
 
         results = filter_low_confidence(results)
         results = sort_by_priority(results)
+
+        # store embeddings for semantic search
+        thread_text_map = {t["thread_id"]: t["messages"][0] for t in threads}
+        for r in results:
+            tid = r.get("thread_id")
+            if tid:
+                try:
+                    store_email(
+                        thread_id=tid,
+                        email_text=thread_text_map.get(tid, ""),
+                        task=r.get("task") or "",
+                        deadline=r.get("deadline") or "",
+                        priority=r.get("priority", 1),
+                        summary=r.get("summary") or "",
+                        confidence=float(r.get("confidence", 0.5)),
+                    )
+                except Exception as e:
+                    print("Vector store error:", e)
 
         response = {
             "total_tasks": len(results),

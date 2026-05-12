@@ -1,13 +1,18 @@
 import os
+import time
+import secrets
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 router = APIRouter()
+
+# short-lived one-time codes: {code: {token, email, expires}}
+_pending: dict = {}
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -19,7 +24,7 @@ if ENV == "production":
     FRONTEND_URL = "https://inboxiq-frontend.onrender.com"
 else:
     REDIRECT_URI = "http://localhost:8000/auth/callback"
-    FRONTEND_URL = "http://localhost:5173"
+    FRONTEND_URL = "http://localhost:5176"
 
 SCOPES = " ".join([
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -74,6 +79,29 @@ def callback(code: str = None, error: str = None, error_description: str = None)
 
     user_email = userinfo.get("email", "")
 
-    return RedirectResponse(
-        f"{FRONTEND_URL}?token={access_token}&email={user_email}"
-    )
+    # store token server-side, redirect with a short-lived opaque code instead
+    code = secrets.token_urlsafe(32)
+    _pending[code] = {
+        "token": access_token,
+        "email": user_email,
+        "expires": time.time() + 120,  # 2 minute TTL
+    }
+
+    return RedirectResponse(f"{FRONTEND_URL}?code={code}")
+
+
+@router.post("/auth/exchange")
+def exchange(body: dict):
+    code = body.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+
+    entry = _pending.pop(code, None)
+
+    if not entry:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    if time.time() > entry["expires"]:
+        raise HTTPException(status_code=400, detail="Code expired")
+
+    return {"token": entry["token"], "email": entry["email"]}
