@@ -2,8 +2,6 @@ import { Router } from 'express';
 import axios from 'axios';
 import { analyzeEmailThread } from '../services/nlp.service.js';
 import { fetchThreads } from '../services/gmail.service.js';
-import { processAllThreads } from '../services/thread.service.js';
-import { computePriority } from '../services/priority.service.js';
 import { filterLowConfidence, sortByPriority } from '../utils/pipeline.utils.js';
 import { SPACY_SERVICE_URL } from '../config.js';
 
@@ -86,20 +84,6 @@ router.get('/gmail', async (req, res) => {
     res.json(response);
   } catch (err) {
     console.error('GMAIL ERROR:', err.message);
-    res.status(500).json({ detail: err.message });
-  }
-});
-
-router.post('/process-all-threads', async (req, res) => {
-  try {
-    let results = await processAllThreads(req.body);
-    results = results.map(r => ({
-      ...r,
-      priority: computePriority(r.combined_text || '', r.deadline, 'thread'),
-    }));
-    res.json(results);
-  } catch (err) {
-    console.error('THREAD ERROR:', err.message);
     res.status(500).json({ detail: err.message });
   }
 });
