@@ -370,6 +370,9 @@ export default function App() {
   const isAuthenticated = !!token;
 
   const handleSignOut = () => {
+    axios.post(`${BACKEND_URL}/auth/logout`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
     localStorage.removeItem("token");
     localStorage.removeItem("userEmail");
     setToken(""); setUserEmail(""); setTasks([]);

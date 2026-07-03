@@ -4,6 +4,7 @@ import { analyzeEmailThread } from '../services/nlp.service.js';
 import { fetchThreads } from '../services/gmail.service.js';
 import { filterLowConfidence, sortByPriority } from '../utils/pipeline.utils.js';
 import { SPACY_SERVICE_URL } from '../config.js';
+import { requireSession } from '../middleware/auth.middleware.js';
 
 const router = Router();
 const CACHE = new Map();
@@ -21,28 +22,17 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
-router.get('/gmail', async (req, res) => {
-  const authorization = req.headers.authorization;
-  if (!authorization?.startsWith('Bearer ')) {
-    return res.status(401).json({ detail: 'Missing or invalid Authorization header' });
-  }
-
-  const token = authorization.slice(7).trim();
-  if (!token || token === 'null') {
-    return res.status(401).json({ detail: 'Invalid token' });
-  }
-
-  console.log('TOKEN RECEIVED:', token.slice(0, 20));
+router.get('/gmail', requireSession, async (req, res) => {
+  const { id: sessionId, accessToken } = req.session;
 
   const now = Date.now();
-  const cached = CACHE.get(token);
+  const cached = CACHE.get(sessionId);
   if (cached && now - cached.timestamp < CACHE_TTL) {
-    console.log('Returning cached data');
     return res.json(cached.data);
   }
 
   try {
-    const threads = await fetchThreads(token, 20);
+    const threads = await fetchThreads(accessToken, 20);
 
     const settled = await Promise.allSettled(
       threads.map(async t => {
@@ -80,7 +70,7 @@ router.get('/gmail', async (req, res) => {
     }
 
     const response = { total_tasks: results.length, tasks: results };
-    CACHE.set(token, { data: response, timestamp: now });
+    CACHE.set(sessionId, { data: response, timestamp: now });
     res.json(response);
   } catch (err) {
     console.error('GMAIL ERROR:', err.message);

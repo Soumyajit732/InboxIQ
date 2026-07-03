@@ -7,6 +7,7 @@ import {
   REDIRECT_URI,
   FRONTEND_URL,
 } from '../config.js';
+import { createSession, deleteSession } from '../services/session.service.js';
 
 const router = Router();
 const _pending = new Map();
@@ -49,7 +50,7 @@ router.get('/auth/callback', async (req, res) => {
       }),
     );
 
-    const { access_token } = tokenRes.data;
+    const { access_token, refresh_token, expires_in } = tokenRes.data;
 
     const userRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${access_token}` },
@@ -59,7 +60,9 @@ router.get('/auth/callback', async (req, res) => {
     const opaqueCode = crypto.randomBytes(32).toString('base64url');
 
     _pending.set(opaqueCode, {
-      token: access_token,
+      accessToken: access_token,
+      refreshToken: refresh_token,
+      expiresIn: expires_in,
       email,
       expires: Date.now() + 120_000,
     });
@@ -81,7 +84,22 @@ router.post('/auth/exchange', (req, res) => {
   if (!entry) return res.status(400).json({ detail: 'Invalid or expired code' });
   if (Date.now() > entry.expires) return res.status(400).json({ detail: 'Code expired' });
 
-  res.json({ token: entry.token, email: entry.email });
+  const sessionId = createSession({
+    email: entry.email,
+    accessToken: entry.accessToken,
+    refreshToken: entry.refreshToken,
+    expiresIn: entry.expiresIn,
+  });
+
+  res.json({ token: sessionId, email: entry.email });
+});
+
+router.post('/auth/logout', (req, res) => {
+  const authorization = req.headers.authorization;
+  if (authorization?.startsWith('Bearer ')) {
+    deleteSession(authorization.slice(7).trim());
+  }
+  res.json({ status: 'ok' });
 });
 
 export default router;
