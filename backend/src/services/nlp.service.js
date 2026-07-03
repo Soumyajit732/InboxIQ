@@ -4,7 +4,7 @@ import { OPENAI_API_KEY, SPACY_SERVICE_URL } from '../config.js';
 
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-function computePriority(task, deadline) {
+export function computePriority(task, deadline) {
   let score = 1;
 
   if (deadline) {

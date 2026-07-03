@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { getPriority, formatDeadline, initials, formatSyncTime } from "./utils/format.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -99,40 +100,6 @@ const InboxIcon = () => (
     <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
   </svg>
 );
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const getPriority = (p) => {
-  if (p >= 4) return { label: "High",   cls: "pri-high",   dot: "#ef4444" };
-  if (p === 3) return { label: "Medium", cls: "pri-medium", dot: "#f59e0b" };
-  return             { label: "Low",    cls: "pri-low",    dot: "#10b981" };
-};
-
-const formatDeadline = (deadline) => {
-  if (!deadline) return { date: "No deadline", countdown: null, urgency: "" };
-  const d = new Date(deadline);
-  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const diffMs = d - Date.now();
-  if (diffMs <= 0) return { date, countdown: "Expired", urgency: "expired" };
-  const totalHours = Math.floor(diffMs / 3600000);
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  const mins = Math.floor((diffMs % 3600000) / 60000);
-  let countdown;
-  if (days > 0)           countdown = `${days}d ${hours}h left`;
-  else if (totalHours > 0) countdown = `${totalHours}h ${mins}m left`;
-  else                     countdown = `${mins}m left`;
-  return { date, countdown, urgency: totalHours < 24 ? "urgent" : "ok" };
-};
-
-const initials = (email) => email ? email.slice(0, 2).toUpperCase() : "?";
-
-const formatSyncTime = (iso) => {
-  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (diff < 10)  return "just now";
-  if (diff < 60)  return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-};
 
 // ── Sign-In Page ──────────────────────────────────────────────────────────────
 function SignInPage() {
