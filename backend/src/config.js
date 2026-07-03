@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-config({ path: resolve(__dirname, '../../app/.env') });
+config({ path: resolve(__dirname, '../../.env') });
 
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
