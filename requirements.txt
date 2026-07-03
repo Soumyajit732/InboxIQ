@@ -1,14 +1,7 @@
 fastapi
-chromadb
 uvicorn
-python-dotenv
-openai
 spacy
 dateparser
-beautifulsoup4
-google-api-python-client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-sqlalchemy
-psycopg2-binary
+chromadb
+openai
+python-dotenv

@@ -1,36 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import email_routes
-from app.api import search_routes
-from app.services.oauth_service import router as oauth_router
-from app.db.models import Base
-from app.db.database import engine
+from app.services.nlp_spacy import router as spacy_router
+from app.services.vector_store import router as vector_router
 
-app = FastAPI(title="InboxIQ")
+app = FastAPI(title="InboxIQ NLP/Vector Service")
 
-# ✅ CORS CONFIG (LOCAL + DEPLOYED FRONTEND)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5176",                # local dev
-        "http://localhost:3000",                # optional (React)
-        "https://inboxiq-frontend.onrender.com" # deployed frontend
-    ],
-    allow_credentials=True,
+    allow_origins=["http://localhost:8000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 🔹 (Optional) Create DB tables
-# Base.metadata.create_all(bind=engine)
+app.include_router(spacy_router)
+app.include_router(vector_router)
 
-# ✅ ROUTES
-app.include_router(email_routes.router)
-app.include_router(search_routes.router)
-app.include_router(oauth_router)
 
-# 🔹 Root check
 @app.get("/")
 def root():
-    return {"message": "InboxIQ running 🚀"}
+    return {"message": "InboxIQ NLP/Vector service running on port 8001"}

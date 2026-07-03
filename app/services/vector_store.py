@@ -1,9 +1,11 @@
 import chromadb
 from openai import OpenAI
+from fastapi import APIRouter
 from app.config import OPENAI_API_KEY
 
 _openai = OpenAI(api_key=OPENAI_API_KEY)
 _chroma = chromadb.PersistentClient(path="./chroma_db")
+router = APIRouter()
 _collection = _chroma.get_or_create_collection(
     name="emails",
     metadata={"hnsw:space": "cosine"},
@@ -63,3 +65,23 @@ def search_emails(query: str, top_k: int = 5) -> list[dict]:
         })
 
     return output
+
+
+@router.post("/vector/store")
+def vector_store_endpoint(body: dict):
+    store_email(
+        thread_id=body["thread_id"],
+        email_text=body.get("email_text", ""),
+        task=body.get("task", ""),
+        deadline=body.get("deadline", ""),
+        priority=body.get("priority", 1),
+        summary=body.get("summary", ""),
+        confidence=float(body.get("confidence", 0.5)),
+    )
+    return {"status": "stored"}
+
+
+@router.get("/vector/search")
+def vector_search_endpoint(q: str, top_k: int = 5):
+    results = search_emails(q.strip(), top_k)
+    return {"query": q, "results": results}
