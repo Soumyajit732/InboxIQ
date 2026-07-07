@@ -22,7 +22,7 @@ function fakeEmbedding(text) {
   return vec;
 }
 
-const { cosineSimilarity, storeEmail, searchEmails } = await import('./vector.service.js');
+const { cosineSimilarity, storeEmail, searchEmails, getTasksForUser, updateTaskStatus } = await import('./vector.service.js');
 
 describe('cosineSimilarity', () => {
   it('returns 1 for identical vectors', () => {
@@ -108,5 +108,42 @@ describe('storeEmail / searchEmails user isolation', () => {
 
     expect(carolResults.map(r => r.task)).toEqual(['Carol task']);
     expect(daveResults.map(r => r.task)).toEqual(['Dave task']);
+  });
+});
+
+describe('storeEmail rescan preserves task status', () => {
+  it('does not reset a user-set status back to open when the same thread is re-stored', async () => {
+    const email = 'erin@example.com';
+    const thread_id = 'rescan-thread';
+
+    await storeEmail({
+      user_email: email,
+      thread_id,
+      email_text: 'Submit the report',
+      task: 'Submit the report',
+      deadline: null,
+      priority: 3,
+      summary: 'v1',
+      confidence: 1,
+    });
+
+    expect(updateTaskStatus(email, thread_id, 'done')).toBe(true);
+    expect(getTasksForUser(email).find(t => t.thread_id === thread_id).status).toBe('done');
+
+    // Simulate a rescan of the same thread turning up a slightly different extraction
+    await storeEmail({
+      user_email: email,
+      thread_id,
+      email_text: 'Submit the report (reply added)',
+      task: 'Submit the report',
+      deadline: '2026-08-01T17:00:00',
+      priority: 4,
+      summary: 'v2 -- updated after a new reply',
+      confidence: 1,
+    });
+
+    const task = getTasksForUser(email).find(t => t.thread_id === thread_id);
+    expect(task.status).toBe('done'); // preserved, not reset to 'open'
+    expect(task.summary).toBe('v2 -- updated after a new reply'); // extraction data still refreshes
   });
 });

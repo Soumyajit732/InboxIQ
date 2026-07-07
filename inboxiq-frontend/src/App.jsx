@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { getPriority, formatDeadline, initials, formatSyncTime } from "./utils/format.js";
 
@@ -195,7 +195,101 @@ function WhySection({ source_snippet, reasoning, deadline_source }) {
   );
 }
 
-function TaskCard({ task }) {
+// ── Status Tabs ──────────────────────────────────────────────────────────────
+const STATUS_TABS = [
+  { key: "open", label: "Open" },
+  { key: "done", label: "Done" },
+  { key: "snoozed", label: "Snoozed" },
+  { key: "dismissed", label: "Dismissed" },
+  { key: "archived", label: "Archived" },
+  { key: "all", label: "All" },
+];
+
+function StatusTabs({ active, onChange }) {
+  return (
+    <div className="status-tabs">
+      {STATUS_TABS.map(tab => (
+        <button
+          key={tab.key}
+          type="button"
+          className={`status-tab ${active === tab.key ? "active" : ""}`}
+          onClick={() => onChange(tab.key)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Task Actions ─────────────────────────────────────────────────────────────
+const SNOOZE_OPTIONS = [
+  { label: "Later today", getDate: () => { const d = new Date(); d.setHours(d.getHours() + 3, 0, 0, 0); return d; } },
+  { label: "Tomorrow 9am", getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
+  { label: "Next week", getDate: () => { const d = new Date(); d.setDate(d.getDate() + 7); d.setHours(9, 0, 0, 0); return d; } },
+];
+
+function TaskActions({ task, onStatusChange }) {
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+
+  const snooze = (getDate) => {
+    onStatusChange(task.thread_id, "snoozed", getDate().toISOString());
+    setSnoozeOpen(false);
+  };
+
+  if (task.status === "open") {
+    return (
+      <div className="task-actions">
+        <button type="button" className="task-action-btn primary" onClick={() => onStatusChange(task.thread_id, "done")}>Done</button>
+        <div className="snooze-wrap">
+          <button type="button" className="task-action-btn" onClick={() => setSnoozeOpen(o => !o)}>Snooze ▾</button>
+          {snoozeOpen && (
+            <div className="snooze-menu">
+              {SNOOZE_OPTIONS.map(opt => (
+                <button key={opt.label} type="button" onClick={() => snooze(opt.getDate)}>{opt.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button type="button" className="task-action-btn muted" onClick={() => onStatusChange(task.thread_id, "dismissed")}>Dismiss</button>
+      </div>
+    );
+  }
+
+  if (task.status === "snoozed") {
+    const until = task.snoozed_until
+      ? new Date(task.snoozed_until).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : null;
+    return (
+      <div className="task-actions">
+        {until && <span className="snoozed-until-label">Snoozed until {until}</span>}
+        <button type="button" className="task-action-btn" onClick={() => onStatusChange(task.thread_id, "open")}>Unsnooze</button>
+        <button type="button" className="task-action-btn muted" onClick={() => onStatusChange(task.thread_id, "dismissed")}>Dismiss</button>
+      </div>
+    );
+  }
+
+  if (task.status === "done" || task.status === "dismissed") {
+    return (
+      <div className="task-actions">
+        <button type="button" className="task-action-btn" onClick={() => onStatusChange(task.thread_id, "open")}>Reopen</button>
+        <button type="button" className="task-action-btn muted" onClick={() => onStatusChange(task.thread_id, "archived")}>Archive</button>
+      </div>
+    );
+  }
+
+  if (task.status === "archived") {
+    return (
+      <div className="task-actions">
+        <button type="button" className="task-action-btn" onClick={() => onStatusChange(task.thread_id, "open")}>Reopen</button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function TaskCard({ task, onStatusChange }) {
   const pri = getPriority(task.priority);
   const { date, countdown, urgency } = formatDeadline(task.deadline);
   const confidence = typeof task.confidence === "number"
@@ -241,6 +335,8 @@ function TaskCard({ task }) {
         </div>
 
         <WhySection source_snippet={task.source_snippet} reasoning={task.reasoning} deadline_source={task.deadline_source} />
+
+        {onStatusChange && <TaskActions task={task} onStatusChange={onStatusChange} />}
       </div>
     </div>
   );
@@ -362,6 +458,9 @@ export default function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [searchQuery,   setSearchQuery]   = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
+  const [statusFilter,  setStatusFilter]  = useState("open");
+  const statusFilterRef = useRef("open");
+  useEffect(() => { statusFilterRef.current = statusFilter; }, [statusFilter]);
 
   const isAuthenticated = !!token;
 
@@ -374,23 +473,57 @@ export default function App() {
     setToken(""); setUserEmail(""); setTasks([]);
   };
 
-  const fetchTasks = async () => {
+  const fetchTasksList = useCallback(async (status) => {
+    const t = localStorage.getItem("token");
+    if (!t) return;
+    try {
+      const res = await axios.get(`${BACKEND_URL}/tasks`, {
+        params: status && status !== "all" ? { status } : {},
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      setTasks(res.data.tasks || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  const handleFilterChange = (status) => {
+    setStatusFilter(status);
+    fetchTasksList(status);
+  };
+
+  const updateTaskStatus = async (threadId, status, snoozedUntil = null) => {
+    setTasks(prev => prev
+      .map(t => t.thread_id === threadId ? { ...t, status, snoozed_until: snoozedUntil } : t)
+      .filter(t => statusFilter === "all" || t.status === statusFilter));
+    try {
+      await axios.patch(`${BACKEND_URL}/tasks/${encodeURIComponent(threadId)}`,
+        { status, snoozed_until: snoozedUntil },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    } catch (err) {
+      console.error(err);
+      fetchTasksList(statusFilter); // reconcile with the server if the update failed
+    }
+  };
+
+  const fetchTasks = useCallback(async () => {
     const t = localStorage.getItem("token");
     if (!t) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${BACKEND_URL}/gmail`, {
+      await axios.get(`${BACKEND_URL}/gmail`, {
         headers: { Authorization: `Bearer ${t}` },
       });
-      setTasks(res.data.tasks || []);
       const now = new Date().toISOString();
       localStorage.setItem("lastSynced", now);
       setLastSynced(now);
+      await fetchTasksList(statusFilterRef.current);
     } catch (err) {
       console.error(err);
     }
     setLoading(false);
-  };
+  }, [fetchTasksList]);
 
   const handleSearch = async (query) => {
     setSearchLoading(true);
@@ -433,7 +566,7 @@ export default function App() {
     if (!isAuthenticated) return;
     const id = setTimeout(fetchTasks, 0);
     return () => clearTimeout(id);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchTasks]);
 
   const highCount = tasks.filter(t => t.priority >= 4).length;
   const todayCount = tasks.filter(t => {
@@ -741,6 +874,48 @@ export default function App() {
           padding: 2px 8px; border-radius: 20px; background: #eef2ff; color: #6366f1;
         }
 
+        /* ── Status Tabs ── */
+        .status-tabs {
+          display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .status-tab {
+          padding: 6px 14px; border-radius: 20px; border: 1px solid #e2e8f0;
+          background: #fff; font-size: 12px; font-weight: 600; color: #64748b;
+          cursor: pointer; transition: all .15s;
+        }
+        .status-tab:hover { border-color: #6366f1; color: #4f46e5; }
+        .status-tab.active { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+
+        /* ── Task Actions ── */
+        .task-actions {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+          margin-top: 10px; padding-top: 10px; border-top: 1px solid #f8fafc;
+          position: relative;
+        }
+        .task-action-btn {
+          padding: 5px 12px; border-radius: 8px; border: 1px solid #e2e8f0;
+          background: #fff; font-size: 12px; font-weight: 600; color: #475569;
+          cursor: pointer; transition: all .15s; white-space: nowrap;
+        }
+        .task-action-btn:hover { border-color: #6366f1; color: #4f46e5; }
+        .task-action-btn.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+        .task-action-btn.primary:hover { background: #4338ca; color: #fff; }
+        .task-action-btn.muted { color: #94a3b8; }
+        .task-action-btn.muted:hover { border-color: #ef4444; color: #ef4444; }
+        .snooze-wrap { position: relative; }
+        .snooze-menu {
+          position: absolute; top: calc(100% + 4px); left: 0; z-index: 10;
+          display: flex; flex-direction: column; min-width: 140px;
+          background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+          box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden;
+        }
+        .snooze-menu button {
+          padding: 8px 12px; border: none; background: #fff; text-align: left;
+          font-size: 12px; font-weight: 500; color: #334155; cursor: pointer;
+        }
+        .snooze-menu button:hover { background: #f8fafc; color: #4f46e5; }
+        .snoozed-until-label { font-size: 11px; color: #94a3b8; font-weight: 500; }
+
         /* ── Skeleton ── */
         .skeleton-card {
           background: #fff; border-radius: 14px; padding: 18px 22px;
@@ -921,13 +1096,15 @@ export default function App() {
               )}
             </div>
 
+            <StatusTabs active={statusFilter} onChange={handleFilterChange} />
+
             <div className="tasks-grid">
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
               ) : tasks.length === 0 ? (
                 <EmptyState onRefresh={fetchTasks} />
               ) : (
-                tasks.map((task, i) => <TaskCard key={i} task={task} />)
+                tasks.map(task => <TaskCard key={task.thread_id} task={task} onStatusChange={updateTaskStatus} />)
               )}
             </div>
           </main>
