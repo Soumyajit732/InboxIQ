@@ -22,6 +22,6 @@ services:
       - key: APP_ENV
         value: production
     disk:
-      name: vector-data
+      name: app-data
       mountPath: /opt/render/project/src/backend/data
-      sizeGB: 1 # requires a paid plan; without it, the local vector store resets on every deploy/restart
+      sizeGB: 1 # requires a paid plan; without it, inboxiq.db (tasks + sessions) resets on every deploy/restart

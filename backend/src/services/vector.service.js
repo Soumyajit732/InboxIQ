@@ -1,29 +1,22 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
 import { OPENAI_API_KEY } from '../config.js';
-
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const STORE_PATH = path.resolve(__dirname, '../../data/vector-store.json');
+import { db } from '../db/index.js';
 
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-function loadStore() {
-  try {
-    const raw = fs.readFileSync(STORE_PATH, 'utf-8');
-    return new Map(Object.entries(JSON.parse(raw)));
-  } catch {
-    return new Map();
-  }
-}
+const upsertTask = db.prepare(`
+  INSERT INTO tasks (thread_id, task, deadline, priority, summary, confidence, embedding)
+  VALUES (@thread_id, @task, @deadline, @priority, @summary, @confidence, @embedding)
+  ON CONFLICT(thread_id) DO UPDATE SET
+    task = excluded.task,
+    deadline = excluded.deadline,
+    priority = excluded.priority,
+    summary = excluded.summary,
+    confidence = excluded.confidence,
+    embedding = excluded.embedding
+`);
 
-function persistStore(store) {
-  fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
-  fs.writeFileSync(STORE_PATH, JSON.stringify(Object.fromEntries(store)));
-}
-
-const _store = loadStore();
+const selectAllTasks = db.prepare('SELECT * FROM tasks');
 
 async function embed(text) {
   const response = await client.embeddings.create({
@@ -46,30 +39,30 @@ export function cosineSimilarity(a, b) {
 export async function storeEmail({ thread_id, email_text, task, deadline, priority, summary, confidence }) {
   const doc = `Task: ${task}\nSummary: ${summary}\nEmail: ${(email_text || '').slice(0, 600)}`;
   const embedding = await embed(doc);
-  _store.set(thread_id, {
+  upsertTask.run({
     thread_id,
-    embedding,
     task: task || '',
     deadline: deadline || '',
     priority,
     summary: summary || '',
     confidence,
+    embedding: JSON.stringify(embedding),
   });
-  persistStore(_store);
 }
 
 export async function searchEmails(query, topK = 5) {
-  if (_store.size === 0) return [];
+  const rows = selectAllTasks.all();
+  if (rows.length === 0) return [];
 
   const queryEmbedding = await embed(query);
-  const results = [..._store.values()].map(entry => ({
-    thread_id: entry.thread_id,
-    task: entry.task,
-    deadline: entry.deadline || null,
-    priority: entry.priority,
-    summary: entry.summary,
-    confidence: entry.confidence,
-    relevance_score: Math.round(cosineSimilarity(queryEmbedding, entry.embedding) * 1000) / 1000,
+  const results = rows.map(row => ({
+    thread_id: row.thread_id,
+    task: row.task,
+    deadline: row.deadline || null,
+    priority: row.priority,
+    summary: row.summary,
+    confidence: row.confidence,
+    relevance_score: Math.round(cosineSimilarity(queryEmbedding, JSON.parse(row.embedding)) * 1000) / 1000,
   }));
 
   results.sort((a, b) => b.relevance_score - a.relevance_score);

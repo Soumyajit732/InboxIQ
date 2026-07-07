@@ -1,27 +1,41 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from '../config.js';
+import { db } from '../db/index.js';
 
 const REFRESH_SKEW_MS = 60_000;
-const sessions = new Map();
+
+const insertSession = db.prepare(`
+  INSERT INTO sessions (id, email, access_token, refresh_token, expires_at)
+  VALUES (?, ?, ?, ?, ?)
+`);
+const selectSession = db.prepare('SELECT * FROM sessions WHERE id = ?');
+const deleteSessionStmt = db.prepare('DELETE FROM sessions WHERE id = ?');
+const updateAccessTokenStmt = db.prepare('UPDATE sessions SET access_token = ?, expires_at = ? WHERE id = ?');
+
+function toSession(row) {
+  if (!row) return null;
+  return {
+    email: row.email,
+    accessToken: row.access_token,
+    refreshToken: row.refresh_token,
+    expiresAt: row.expires_at,
+  };
+}
 
 export function createSession({ email, accessToken, refreshToken, expiresIn }) {
   const sessionId = crypto.randomBytes(32).toString('base64url');
-  sessions.set(sessionId, {
-    email,
-    accessToken,
-    refreshToken,
-    expiresAt: Date.now() + expiresIn * 1000,
-  });
+  const expiresAt = Date.now() + expiresIn * 1000;
+  insertSession.run(sessionId, email, accessToken, refreshToken, expiresAt);
   return sessionId;
 }
 
 export function getSession(sessionId) {
-  return sessions.get(sessionId) || null;
+  return toSession(selectSession.get(sessionId));
 }
 
 export function deleteSession(sessionId) {
-  sessions.delete(sessionId);
+  deleteSessionStmt.run(sessionId);
 }
 
 export function isExpired(session, now = Date.now()) {
@@ -29,10 +43,8 @@ export function isExpired(session, now = Date.now()) {
 }
 
 export function updateAccessToken(sessionId, { accessToken, expiresIn }) {
-  const session = sessions.get(sessionId);
-  if (!session) return;
-  session.accessToken = accessToken;
-  session.expiresAt = Date.now() + expiresIn * 1000;
+  const expiresAt = Date.now() + expiresIn * 1000;
+  updateAccessTokenStmt.run(accessToken, expiresAt, sessionId);
 }
 
 export async function refreshAccessToken(refreshToken) {

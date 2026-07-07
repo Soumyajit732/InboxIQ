@@ -13,15 +13,14 @@ InboxIQ reads your Gmail inbox, uses an LLM to pull out actionable tasks, deadli
                                       │
                                       ▼
                            ┌────────────────────────┐
-                           │  Local vector store     │
-                           │  (backend/data/*.json)  │
-                           │  OpenAI embeddings +     │
-                           │  cosine similarity       │
+                           │  SQLite (better-sqlite3)│
+                           │  backend/data/inboxiq.db│
+                           │  tasks + sessions tables│
                            └────────────────────────┘
 ```
 
 - **Frontend** — Google sign-in, task dashboard, semantic search UI.
-- **Backend (Node)** — a single service that owns the Google OAuth flow, fetches and parses Gmail threads, calls OpenAI to extract `{task, deadline, priority, summary, confidence}` (falling back to `chrono-node` for deadline parsing if the LLM call fails), scores priority, and stores/searches email embeddings in a small local vector store (`backend/src/services/vector.service.js`) — OpenAI embeddings compared by cosine similarity, persisted to a JSON file rather than a separate database.
+- **Backend (Node)** — a single service that owns the Google OAuth flow, fetches and parses Gmail threads, calls OpenAI to extract `{task, deadline, priority, summary, confidence}` (falling back to `chrono-node` for deadline parsing if the LLM call fails), scores priority, and stores/searches email embeddings against a local SQLite database (`backend/src/services/vector.service.js`) — OpenAI embeddings stored per task row, compared by cosine similarity computed in JS at query time. Sessions (`backend/src/services/session.service.js`) live in the same database rather than in-memory.
 
 ## Setup
 
@@ -54,6 +53,6 @@ Covers priority scoring, pipeline filtering/sorting, session-store expiry logic,
 
 ## Known limitations
 
-- Sessions, the Gmail-results cache, and the vector store are all local to a single backend instance (in-memory `Map`s plus a JSON file on disk) — they reset on restart/redeploy and don't scale past one instance. A production deploy would swap these for Redis and a real vector DB respectively.
-- There's no persistent database for tasks; the local vector store is the only durable state, and it's keyed by Gmail thread ID rather than a proper task model.
+- Sessions and tasks/embeddings live in a local SQLite file (`backend/data/inboxiq.db`) — durable across backend restarts, but still local to a single instance and, on Render's free tier, reset on redeploy without a persistent disk attached (see `render.yaml`). The Gmail-results cache remains an in-memory `Map` (short TTL by design). A multi-instance production deploy would move this to a hosted Postgres and Redis respectively.
+- Tasks are keyed by Gmail thread ID rather than a proper task model (no user table, no relations) — fine for a single-user personal tool, not multi-tenant.
 - Gmail fetch is capped at the 20 most recent inbox threads per sync.
