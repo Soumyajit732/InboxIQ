@@ -14,6 +14,18 @@ function resolveDbTarget() {
 
 export const db = new Database(resolveDbTarget());
 
+// Guard against a pre-existing `tasks` table from before user_email was added to the
+// primary key -- CREATE TABLE IF NOT EXISTS below would otherwise silently no-op against
+// the old schema. Old rows have no reliable owner to backfill, so this drops and
+// recreates rather than attempting an in-place migration (acceptable: this data is a
+// derived cache re-populated by the next Gmail sync, not a source of truth).
+const existingTaskColumns = db.prepare("PRAGMA table_info(tasks)").all();
+const hasStaleSchema = existingTaskColumns.length > 0
+  && !existingTaskColumns.some(col => col.name === 'user_email');
+if (hasStaleSchema) {
+  db.exec('DROP TABLE tasks');
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS tasks (
     user_email TEXT NOT NULL,

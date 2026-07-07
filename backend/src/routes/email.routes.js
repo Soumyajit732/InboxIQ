@@ -9,7 +9,7 @@ const router = Router();
 const CACHE = new Map();
 const CACHE_TTL = 60_000;
 
-router.post('/analyze', async (req, res) => {
+router.post('/analyze', requireSession, async (req, res) => {
   const { messages } = req.body;
   if (!messages?.length) {
     return res.status(400).json({ detail: 'No messages provided' });

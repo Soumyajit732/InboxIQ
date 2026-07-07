@@ -11,11 +11,13 @@ export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 export const APP_ENV = process.env.APP_ENV || 'development';
 
 export const REDIRECT_URI =
-  APP_ENV === 'production'
+  process.env.REDIRECT_URI ||
+  (APP_ENV === 'production'
     ? 'https://inboxiq-backend-10oo.onrender.com/auth/callback'
-    : 'http://localhost:8000/auth/callback';
+    : 'http://localhost:8000/auth/callback');
 
 export const FRONTEND_URL =
-  APP_ENV === 'production'
+  process.env.FRONTEND_URL ||
+  (APP_ENV === 'production'
     ? 'https://inboxiq-frontend.onrender.com'
-    : 'http://localhost:5176';
+    : 'http://localhost:5176');

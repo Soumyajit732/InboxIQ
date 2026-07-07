@@ -400,7 +400,11 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { if (isAuthenticated) fetchTasks(); }, [isAuthenticated]);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const id = setTimeout(fetchTasks, 0);
+    return () => clearTimeout(id);
+  }, [isAuthenticated]);
 
   const highCount = tasks.filter(t => t.priority >= 4).length;
   const todayCount = tasks.filter(t => {
