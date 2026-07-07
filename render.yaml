@@ -1,0 +1,39 @@
+# Reference blueprint for InboxIQ's two backend services on Render.
+#
+# This is NOT meant to be synced blindly as a new Blueprint -- doing so would spin up
+# brand-new services with new onrender.com URLs, breaking the redirect URI already
+# registered with your Google OAuth client. Instead, use this as a checklist to
+# manually update the *existing* `inboxiq-backend-10oo` service's settings, and to
+# create the new NLP/vector service by hand.
+
+services:
+  - type: web
+    name: inboxiq-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: SPACY_SERVICE_URL
+        sync: false # set to the deployed URL of inboxiq-nlp-service below
+
+  - type: web
+    name: inboxiq-nlp-service
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: chroma-data
+      mountPath: /opt/render/project/src/chroma_db
+      sizeGB: 1 # requires a paid plan; without it, chroma_db resets on every deploy/restart
