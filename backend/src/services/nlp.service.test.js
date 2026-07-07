@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { computePriority } from './nlp.service.js';
+import { describe, it, expect, vi } from 'vitest';
+
+// nlp.service.js constructs a real OpenAI client at module load time, which throws
+// immediately if OPENAI_API_KEY isn't set -- stub it so this file (which only exercises
+// the pure computePriority function) doesn't need a real key.
+vi.mock('openai', () => ({
+  default: class MockOpenAI {},
+}));
+
+const { computePriority } = await import('./nlp.service.js');
 
 describe('computePriority', () => {
   it('returns 5 for a deadline already in the past', () => {
