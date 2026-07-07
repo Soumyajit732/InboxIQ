@@ -50,6 +50,7 @@ router.get('/gmail', requireSession, async (req, res) => {
     results = sortByPriority(results);
 
     const threadTextMap = Object.fromEntries(threads.map(t => [t.thread_id, t.messages[0]]));
+    const threadSenderMap = Object.fromEntries(threads.map(t => [t.thread_id, t.sender || null]));
     for (const r of results) {
       if (r.thread_id) {
         try {
@@ -65,6 +66,7 @@ router.get('/gmail', requireSession, async (req, res) => {
             source_snippet: r.source_snippet || null,
             reasoning: r.reasoning || null,
             deadline_source: r.deadline_source || null,
+            sender: threadSenderMap[r.thread_id] || null,
           });
         } catch (e) {
           console.warn('Vector store error:', e.message);

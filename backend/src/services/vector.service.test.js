@@ -147,3 +147,85 @@ describe('storeEmail rescan preserves task status', () => {
     expect(task.summary).toBe('v2 -- updated after a new reply'); // extraction data still refreshes
   });
 });
+
+describe('searchEmails hybrid filters', () => {
+  const email = 'frank@example.com';
+
+  const seed = async () => {
+    await storeEmail({
+      user_email: email,
+      thread_id: 'filter-thread-budget',
+      email_text: 'Submit the budget report',
+      task: 'Submit budget report',
+      deadline: '2026-07-01T17:00:00',
+      priority: 5,
+      summary: 'budget report, high priority, due early July',
+      confidence: 1,
+      sender: 'Alice <alice@corp.com>',
+    });
+    await storeEmail({
+      user_email: email,
+      thread_id: 'filter-thread-interview',
+      email_text: 'Schedule an interview',
+      task: 'Schedule interview',
+      deadline: '2026-08-15T09:00:00',
+      priority: 2,
+      summary: 'low priority interview scheduling, due mid August',
+      confidence: 1,
+      sender: 'Bob Recruiter <bob@recruiting.com>',
+    });
+    await storeEmail({
+      user_email: email,
+      thread_id: 'filter-thread-review',
+      email_text: 'Review the budget report',
+      task: 'Review budget report',
+      deadline: null,
+      priority: 4,
+      summary: 'review task, no deadline set',
+      confidence: 1,
+      sender: 'Carol <carol@corp.com>',
+    });
+    updateTaskStatus(email, 'filter-thread-review', 'done');
+  };
+
+  it('filters by priorityMin', async () => {
+    await seed();
+    const results = await searchEmails(email, 'report', 10, { priorityMin: 4 });
+    expect(results.map(r => r.thread_id).sort()).toEqual(['filter-thread-budget', 'filter-thread-review']);
+  });
+
+  it('filters by before/after deadline range, excluding tasks with no deadline', async () => {
+    await seed();
+    const before = await searchEmails(email, 'x', 10, { before: '2026-07-15T00:00:00' });
+    expect(before.map(r => r.thread_id)).toEqual(['filter-thread-budget']);
+
+    const after = await searchEmails(email, 'x', 10, { after: '2026-08-01T00:00:00' });
+    expect(after.map(r => r.thread_id)).toEqual(['filter-thread-interview']);
+  });
+
+  it('filters by sender substring match', async () => {
+    await seed();
+    const results = await searchEmails(email, 'x', 10, { sender: 'recruit' });
+    expect(results.map(r => r.thread_id)).toEqual(['filter-thread-interview']);
+  });
+
+  it('filters by status', async () => {
+    await seed();
+    const results = await searchEmails(email, 'x', 10, { status: 'done' });
+    expect(results.map(r => r.thread_id)).toEqual(['filter-thread-review']);
+  });
+
+  it('combines multiple filters with AND semantics', async () => {
+    await seed();
+    const results = await searchEmails(email, 'x', 10, { priorityMin: 4, status: 'open' });
+    expect(results.map(r => r.thread_id)).toEqual(['filter-thread-budget']);
+  });
+
+  it('returns everything for this user when no filters are given', async () => {
+    await seed();
+    const results = await searchEmails(email, 'x', 10);
+    expect(results.map(r => r.thread_id).sort()).toEqual([
+      'filter-thread-budget', 'filter-thread-interview', 'filter-thread-review',
+    ]);
+  });
+});

@@ -25,6 +25,7 @@ export const db = new Database(resolveDbTarget());
 const REQUIRED_TASK_COLUMNS = [
   'user_email', 'thread_id', 'task', 'deadline', 'priority', 'summary', 'confidence',
   'embedding', 'source_snippet', 'reasoning', 'deadline_source', 'status', 'snoozed_until',
+  'sender',
 ];
 const existingTaskColumns = db.prepare("PRAGMA table_info(tasks)").all();
 const hasStaleSchema = existingTaskColumns.length > 0
@@ -48,6 +49,7 @@ db.exec(`
     deadline_source TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     snoozed_until TEXT,
+    sender TEXT,
     PRIMARY KEY (user_email, thread_id)
   );
 

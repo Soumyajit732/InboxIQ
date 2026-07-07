@@ -50,9 +50,11 @@ export async function fetchThreads(accessToken, maxThreads = 20) {
       if (!text && parsed.html) text = cleanHtml(parsed.html);
       if (!text) continue;
 
+      const sender = parsed.from?.text || null;
+
       const existing = threadMap.get(threadId);
       if (!existing || timestamp > existing.timestamp) {
-        threadMap.set(threadId, { text, timestamp });
+        threadMap.set(threadId, { text, timestamp, sender });
       }
     }
 
@@ -60,8 +62,9 @@ export async function fetchThreads(accessToken, maxThreads = 20) {
     if (!nextPageToken) break;
   }
 
-  return Array.from(threadMap.entries()).map(([thread_id, { text }]) => ({
+  return Array.from(threadMap.entries()).map(([thread_id, { text, sender }]) => ({
     thread_id,
     messages: [text],
+    sender,
   }));
 }

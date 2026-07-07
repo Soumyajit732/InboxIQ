@@ -368,37 +368,112 @@ function EmptyState({ onRefresh }) {
 }
 
 // ── Search Bar ────────────────────────────────────────────────────────────────
+const SEARCH_STATUS_OPTIONS = [
+  { value: "", label: "All statuses" },
+  { value: "open", label: "Open" },
+  { value: "done", label: "Done" },
+  { value: "snoozed", label: "Snoozed" },
+  { value: "dismissed", label: "Dismissed" },
+  { value: "archived", label: "Archived" },
+];
+
 function SearchBar({ onSearch, onClear, loading }) {
   const [value, setValue] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [priorityMin, setPriorityMin] = useState("");
+  const [status, setStatus] = useState("");
+  const [before, setBefore] = useState("");
+  const [after, setAfter] = useState("");
+  const [sender, setSender] = useState("");
+
+  const activeFilterCount = [priorityMin, status, before, after, sender].filter(Boolean).length;
 
   const submit = (e) => {
     e.preventDefault();
-    if (value.trim()) onSearch(value.trim());
+    if (!value.trim()) return;
+    onSearch(value.trim(), {
+      priorityMin: priorityMin || undefined,
+      status: status || undefined,
+      before: before || undefined,
+      after: after || undefined,
+      sender: sender.trim() || undefined,
+    });
   };
 
   const clear = () => { setValue(""); onClear(); };
 
+  const clearFilters = () => {
+    setPriorityMin(""); setStatus(""); setBefore(""); setAfter(""); setSender("");
+  };
+
   return (
-    <form className="search-form" onSubmit={submit}>
-      <div className="search-wrap">
-        <span className="search-icon-left"><SearchIcon /></span>
-        <input
-          className="search-input"
-          type="text"
-          placeholder='Search emails — try "project deadline" or "meeting tomorrow"'
-          value={value}
-          onChange={e => setValue(e.target.value)}
-        />
-        {value && (
-          <button type="button" className="search-clear-btn" onClick={clear}>
-            <CloseIcon />
+    <div className="search-block">
+      <form className="search-form" onSubmit={submit}>
+        <div className="search-wrap">
+          <span className="search-icon-left"><SearchIcon /></span>
+          <input
+            className="search-input"
+            type="text"
+            placeholder='Search emails — try "project deadline" or "meeting tomorrow"'
+            value={value}
+            onChange={e => setValue(e.target.value)}
+          />
+          {value && (
+            <button type="button" className="search-clear-btn" onClick={clear}>
+              <CloseIcon />
+            </button>
+          )}
+          <button
+            type="button"
+            className={`filters-toggle-btn ${activeFilterCount > 0 ? "active" : ""}`}
+            onClick={() => setFiltersOpen(o => !o)}
+          >
+            Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
           </button>
-        )}
-        <button type="submit" className="search-submit-btn" disabled={loading || !value.trim()}>
-          {loading ? "Searching…" : "Search"}
-        </button>
-      </div>
-    </form>
+          <button type="submit" className="search-submit-btn" disabled={loading || !value.trim()}>
+            {loading ? "Searching…" : "Search"}
+          </button>
+        </div>
+      </form>
+
+      {filtersOpen && (
+        <div className="filters-panel">
+          <div className="filter-field">
+            <label>Min priority</label>
+            <select value={priorityMin} onChange={e => setPriorityMin(e.target.value)}>
+              <option value="">Any</option>
+              <option value="2">2+</option>
+              <option value="3">3+</option>
+              <option value="4">4+</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+          <div className="filter-field">
+            <label>Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}>
+              {SEARCH_STATUS_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filter-field">
+            <label>Due after</label>
+            <input type="date" value={after} onChange={e => setAfter(e.target.value)} />
+          </div>
+          <div className="filter-field">
+            <label>Due before</label>
+            <input type="date" value={before} onChange={e => setBefore(e.target.value)} />
+          </div>
+          <div className="filter-field">
+            <label>From</label>
+            <input type="text" placeholder="sender contains…" value={sender} onChange={e => setSender(e.target.value)} />
+          </div>
+          {activeFilterCount > 0 && (
+            <button type="button" className="filters-clear-btn" onClick={clearFilters}>Clear filters</button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -430,6 +505,7 @@ function SearchResultCard({ result }) {
         </div>
 
         <h3 className="task-title">{result.task || "Untitled Task"}</h3>
+        {result.sender && <p className="task-sender">From: {result.sender}</p>}
         {result.summary && <p className="task-body">{result.summary}</p>}
 
         <div className="task-meta-row">
@@ -525,11 +601,20 @@ export default function App() {
     setLoading(false);
   }, [fetchTasksList]);
 
-  const handleSearch = async (query) => {
+  const handleSearch = async (query, filters = {}) => {
     setSearchLoading(true);
     setSearchQuery(query);
     try {
-      const res = await axios.get(`${BACKEND_URL}/search?q=${encodeURIComponent(query)}&top_k=6`, {
+      const res = await axios.get(`${BACKEND_URL}/search`, {
+        params: {
+          q: query,
+          top_k: 6,
+          status: filters.status,
+          priority_min: filters.priorityMin,
+          before: filters.before,
+          after: filters.after,
+          sender: filters.sender,
+        },
         headers: { Authorization: `Bearer ${token}` },
       });
       setSearchResults(res.data.results || []);
@@ -952,7 +1037,8 @@ export default function App() {
         .empty-refresh-btn:hover { background: #4338ca; transform: translateY(-1px); }
 
         /* ── Search Bar ── */
-        .search-form { margin-bottom: 28px; }
+        .search-block { margin-bottom: 28px; }
+        .search-form { margin-bottom: 0; }
         .search-wrap {
           display: flex; align-items: center; gap: 0;
           background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px;
@@ -989,6 +1075,36 @@ export default function App() {
           font-size: 11px; font-weight: 700; padding: 3px 8px;
           border-radius: 20px; background: #f0fdf4; color: #16a34a;
         }
+        .task-sender { font-size: 12px; color: #94a3b8; margin-top: -4px; }
+
+        .filters-toggle-btn {
+          margin: 6px 0 6px 8px; padding: 7px 14px; border-radius: 8px;
+          border: 1px solid #e2e8f0; background: #fff; color: #64748b;
+          font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+          transition: all .15s;
+        }
+        .filters-toggle-btn:hover { border-color: #6366f1; color: #4f46e5; }
+        .filters-toggle-btn.active { background: #eef2ff; border-color: #6366f1; color: #4f46e5; }
+
+        .filters-panel {
+          display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;
+          margin-top: 10px; padding: 14px 16px; border-radius: 12px;
+          background: #fff; border: 1px solid #f1f5f9; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+        }
+        .filter-field { display: flex; flex-direction: column; gap: 4px; }
+        .filter-field label { font-size: 11px; font-weight: 600; color: #94a3b8; }
+        .filter-field select, .filter-field input {
+          padding: 7px 10px; border-radius: 8px; border: 1px solid #e2e8f0;
+          font-size: 13px; color: #0f172a; font-family: inherit; background: #fff;
+        }
+        .filter-field select:focus, .filter-field input:focus {
+          outline: none; border-color: #6366f1;
+        }
+        .filters-clear-btn {
+          padding: 7px 12px; border-radius: 8px; border: none; background: transparent;
+          font-size: 12px; font-weight: 600; color: #ef4444; cursor: pointer;
+        }
+        .filters-clear-btn:hover { background: #fef2f2; }
 
         /* ── Responsive ── */
         @media (max-width: 900px) {
