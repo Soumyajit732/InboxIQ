@@ -14,14 +14,19 @@ function resolveDbTarget() {
 
 export const db = new Database(resolveDbTarget());
 
-// Guard against a pre-existing `tasks` table from before user_email was added to the
-// primary key -- CREATE TABLE IF NOT EXISTS below would otherwise silently no-op against
-// the old schema. Old rows have no reliable owner to backfill, so this drops and
-// recreates rather than attempting an in-place migration (acceptable: this data is a
-// derived cache re-populated by the next Gmail sync, not a source of truth).
+// Guard against a pre-existing `tasks` table missing columns added in a later version
+// (e.g. user_email, or the explainability fields below) -- CREATE TABLE IF NOT EXISTS
+// would otherwise silently no-op against the old schema. Old rows have no reliable way
+// to backfill the new columns, so this drops and recreates rather than attempting an
+// in-place migration (acceptable: this data is a derived cache re-populated by the next
+// Gmail sync, not a source of truth).
+const REQUIRED_TASK_COLUMNS = [
+  'user_email', 'thread_id', 'task', 'deadline', 'priority', 'summary', 'confidence',
+  'embedding', 'source_snippet', 'reasoning', 'deadline_source',
+];
 const existingTaskColumns = db.prepare("PRAGMA table_info(tasks)").all();
 const hasStaleSchema = existingTaskColumns.length > 0
-  && !existingTaskColumns.some(col => col.name === 'user_email');
+  && !REQUIRED_TASK_COLUMNS.every(name => existingTaskColumns.some(col => col.name === name));
 if (hasStaleSchema) {
   db.exec('DROP TABLE tasks');
 }
@@ -36,6 +41,9 @@ db.exec(`
     summary TEXT,
     confidence REAL,
     embedding TEXT NOT NULL,
+    source_snippet TEXT,
+    reasoning TEXT,
+    deadline_source TEXT,
     PRIMARY KEY (user_email, thread_id)
   );
 

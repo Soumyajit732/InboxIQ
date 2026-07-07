@@ -5,15 +5,24 @@ import { db } from '../db/index.js';
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const upsertTask = db.prepare(`
-  INSERT INTO tasks (user_email, thread_id, task, deadline, priority, summary, confidence, embedding)
-  VALUES (@user_email, @thread_id, @task, @deadline, @priority, @summary, @confidence, @embedding)
+  INSERT INTO tasks (
+    user_email, thread_id, task, deadline, priority, summary, confidence, embedding,
+    source_snippet, reasoning, deadline_source
+  )
+  VALUES (
+    @user_email, @thread_id, @task, @deadline, @priority, @summary, @confidence, @embedding,
+    @source_snippet, @reasoning, @deadline_source
+  )
   ON CONFLICT(user_email, thread_id) DO UPDATE SET
     task = excluded.task,
     deadline = excluded.deadline,
     priority = excluded.priority,
     summary = excluded.summary,
     confidence = excluded.confidence,
-    embedding = excluded.embedding
+    embedding = excluded.embedding,
+    source_snippet = excluded.source_snippet,
+    reasoning = excluded.reasoning,
+    deadline_source = excluded.deadline_source
 `);
 
 const selectTasksForUser = db.prepare('SELECT * FROM tasks WHERE user_email = ?');
@@ -36,7 +45,10 @@ export function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-export async function storeEmail({ user_email, thread_id, email_text, task, deadline, priority, summary, confidence }) {
+export async function storeEmail({
+  user_email, thread_id, email_text, task, deadline, priority, summary, confidence,
+  source_snippet, reasoning, deadline_source,
+}) {
   const doc = `Task: ${task}\nSummary: ${summary}\nEmail: ${(email_text || '').slice(0, 600)}`;
   const embedding = await embed(doc);
   upsertTask.run({
@@ -48,6 +60,9 @@ export async function storeEmail({ user_email, thread_id, email_text, task, dead
     summary: summary || '',
     confidence,
     embedding: JSON.stringify(embedding),
+    source_snippet: source_snippet || null,
+    reasoning: reasoning || null,
+    deadline_source: deadline_source || null,
   });
 }
 
@@ -63,6 +78,9 @@ export async function searchEmails(userEmail, query, topK = 5) {
     priority: row.priority,
     summary: row.summary,
     confidence: row.confidence,
+    source_snippet: row.source_snippet || null,
+    reasoning: row.reasoning || null,
+    deadline_source: row.deadline_source || null,
     relevance_score: Math.round(cosineSimilarity(queryEmbedding, JSON.parse(row.embedding)) * 1000) / 1000,
   }));
 

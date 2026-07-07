@@ -37,6 +37,9 @@ function normalizeResponse(data) {
     priority: computePriority(task, deadline),
     summary: data.summary || '',
     confidence: parseFloat(data.confidence ?? 0.5),
+    source_snippet: data.source_snippet || null,
+    reasoning: data.reasoning || null,
+    deadline_source: data.deadline_source ?? (deadline ? 'llm' : null),
   };
 }
 
@@ -62,11 +65,14 @@ Rules:
 - Extract only actionable tasks
 - Extract time if mentioned (e.g., "5 pm")
 - Ignore promotional emails
+- source_snippet must be a short verbatim quote from the email that justifies the task
+  (not a paraphrase) -- this is shown to the user as evidence for the extraction
+- reasoning must be one sentence explaining why this was flagged as a task
 
 Return STRICT JSON:
-{"task": string or null, "deadline": ISO datetime or null, "priority": 1-5, "summary": string, "confidence": 0-1}
+{"task": string or null, "deadline": ISO datetime or null, "priority": 1-5, "summary": string, "confidence": 0-1, "source_snippet": string or null, "reasoning": string or null}
 
-If no task: {"task": null, "deadline": null, "priority": 1, "summary": "No actionable task", "confidence": 0.5}`,
+If no task: {"task": null, "deadline": null, "priority": 1, "summary": "No actionable task", "confidence": 0.5, "source_snippet": null, "reasoning": null}`,
         },
         { role: 'user', content: text },
       ],

@@ -62,6 +62,9 @@ router.get('/gmail', requireSession, async (req, res) => {
             priority: r.priority || 1,
             summary: r.summary || '',
             confidence: r.confidence || 0.5,
+            source_snippet: r.source_snippet || null,
+            reasoning: r.reasoning || null,
+            deadline_source: r.deadline_source || null,
           });
         } catch (e) {
           console.warn('Vector store error:', e.message);

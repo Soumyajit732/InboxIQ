@@ -170,6 +170,31 @@ function StatCard({ label, value, icon, accent }) {
 }
 
 // ── Task Card ─────────────────────────────────────────────────────────────────
+// ── Why This Task ─────────────────────────────────────────────────────────────
+const DEADLINE_SOURCE_LABEL = { llm: "AI", chrono: "date parser" };
+
+function WhySection({ source_snippet, reasoning, deadline_source }) {
+  const [open, setOpen] = useState(false);
+  if (!reasoning && !source_snippet) return null;
+
+  const sourceLabel = DEADLINE_SOURCE_LABEL[deadline_source] || null;
+
+  return (
+    <div className="why-section">
+      <button type="button" className="why-toggle" onClick={() => setOpen(o => !o)}>
+        Why this task? <span className={`why-chevron ${open ? "open" : ""}`}>▾</span>
+      </button>
+      {open && (
+        <div className="why-panel">
+          {reasoning && <p className="why-reasoning">{reasoning}</p>}
+          {source_snippet && <blockquote className="why-snippet">&ldquo;{source_snippet}&rdquo;</blockquote>}
+          {sourceLabel && <span className="why-source-badge">Deadline detected via {sourceLabel}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskCard({ task }) {
   const pri = getPriority(task.priority);
   const { date, countdown, urgency } = formatDeadline(task.deadline);
@@ -214,6 +239,8 @@ function TaskCard({ task }) {
             </span>
           )}
         </div>
+
+        <WhySection source_snippet={task.source_snippet} reasoning={task.reasoning} deadline_source={task.deadline_source} />
       </div>
     </div>
   );
@@ -318,6 +345,8 @@ function SearchResultCard({ result }) {
             )}
           </span>
         </div>
+
+        <WhySection source_snippet={result.source_snippet} reasoning={result.reasoning} deadline_source={result.deadline_source} />
       </div>
     </div>
   );
@@ -687,6 +716,30 @@ export default function App() {
         .chip-ok      { background: #f0fdf4; color: #16a34a; }
         .chip-urgent  { background: #fff7ed; color: #c2410c; }
         .chip-expired { background: #fef2f2; color: #dc2626; }
+
+        /* ── Why This Task ── */
+        .why-section { margin-top: 8px; }
+        .why-toggle {
+          display: flex; align-items: center; gap: 4px;
+          background: none; border: none; padding: 0; cursor: pointer;
+          font-size: 11px; font-weight: 600; color: #6366f1;
+        }
+        .why-chevron { display: inline-block; transition: transform .15s; font-size: 9px; }
+        .why-chevron.open { transform: rotate(180deg); }
+        .why-panel {
+          margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+          background: #f8fafc; border: 1px solid #f1f5f9;
+          display: flex; flex-direction: column; gap: 6px;
+        }
+        .why-reasoning { font-size: 12px; color: #475569; line-height: 1.5; }
+        .why-snippet {
+          font-size: 12px; color: #64748b; font-style: italic; line-height: 1.5;
+          margin: 0; padding-left: 8px; border-left: 2px solid #e2e8f0;
+        }
+        .why-source-badge {
+          align-self: flex-start; font-size: 10px; font-weight: 700;
+          padding: 2px 8px; border-radius: 20px; background: #eef2ff; color: #6366f1;
+        }
 
         /* ── Skeleton ── */
         .skeleton-card {

@@ -40,4 +40,19 @@ describe('analyzeWithChrono', () => {
     const result = analyzeWithChrono('just checking in, no dates');
     expect(result.deadline).toBeNull();
   });
+
+  it('includes the matched date phrase as source_snippet and reasoning when a deadline is found', () => {
+    const result = analyzeWithChrono('Please submit the report by tomorrow');
+    expect(result.source_snippet).toBe('tomorrow');
+    expect(result.reasoning).toMatch(/tomorrow/);
+    expect(result.reasoning).toMatch(/chrono-node/);
+    expect(result.deadline_source).toBe('chrono');
+  });
+
+  it('leaves source_snippet/reasoning/deadline_source null when nothing parses', () => {
+    const result = analyzeWithChrono('just checking in, no dates');
+    expect(result.source_snippet).toBeNull();
+    expect(result.reasoning).toBeNull();
+    expect(result.deadline_source).toBeNull();
+  });
 });
