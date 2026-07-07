@@ -1,5 +1,7 @@
 # InboxIQ
 
+![CI](https://github.com/Soumyajit732/InboxIQ/actions/workflows/ci.yml/badge.svg)
+
 InboxIQ reads your Gmail inbox, uses an LLM to pull out actionable tasks, deadlines, and priority from each thread, and gives you a dashboard plus semantic search over everything it's found — so nothing important gets buried.
 
 ## Architecture
@@ -24,7 +26,7 @@ InboxIQ reads your Gmail inbox, uses an LLM to pull out actionable tasks, deadli
 
 ## Setup
 
-Requires Node 18+ and a Google Cloud OAuth client (Gmail API + `openid`/`email`/`profile` scopes) plus an OpenAI API key.
+Requires Node 20+ (required by `better-sqlite3`) and a Google Cloud OAuth client (Gmail API + `openid`/`email`/`profile` scopes) plus an OpenAI API key.
 
 1. Copy `.env.example` to `.env` at the repo root and fill in `OPENAI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 2. **Backend**
@@ -49,7 +51,7 @@ cd backend && npm test
 cd inboxiq-frontend && npm test
 ```
 
-Covers priority scoring, pipeline filtering/sorting, session-store expiry logic, deadline extraction, vector similarity scoring, and the dashboard's date/priority formatters.
+Covers priority scoring, pipeline filtering/sorting, session-store expiry logic, deadline extraction, vector similarity scoring and per-user isolation, and the dashboard's date/priority formatters. Both suites plus frontend lint and build run automatically on every push/PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Known limitations
 
