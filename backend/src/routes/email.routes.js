@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import axios from 'axios';
 import { analyzeEmailThread } from '../services/nlp.service.js';
 import { fetchThreads } from '../services/gmail.service.js';
+import { storeEmail } from '../services/vector.service.js';
 import { filterLowConfidence, sortByPriority } from '../utils/pipeline.utils.js';
-import { SPACY_SERVICE_URL } from '../config.js';
 import { requireSession } from '../middleware/auth.middleware.js';
-import { withRetry } from '../utils/http.utils.js';
 
 const router = Router();
 const CACHE = new Map();
@@ -55,17 +53,15 @@ router.get('/gmail', requireSession, async (req, res) => {
     for (const r of results) {
       if (r.thread_id) {
         try {
-          await withRetry(() =>
-            axios.post(`${SPACY_SERVICE_URL}/vector/store`, {
-              thread_id: r.thread_id,
-              email_text: threadTextMap[r.thread_id] || '',
-              task: r.task || '',
-              deadline: r.deadline || '',
-              priority: r.priority || 1,
-              summary: r.summary || '',
-              confidence: r.confidence || 0.5,
-            }),
-          );
+          await storeEmail({
+            thread_id: r.thread_id,
+            email_text: threadTextMap[r.thread_id] || '',
+            task: r.task || '',
+            deadline: r.deadline || '',
+            priority: r.priority || 1,
+            summary: r.summary || '',
+            confidence: r.confidence || 0.5,
+          });
         } catch (e) {
           console.warn('Vector store error:', e.message);
         }

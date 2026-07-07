@@ -1,7 +1,5 @@
 import { Router } from 'express';
-import axios from 'axios';
-import { SPACY_SERVICE_URL } from '../config.js';
-import { withRetry } from '../utils/http.utils.js';
+import { searchEmails } from '../services/vector.service.js';
 
 const router = Router();
 
@@ -12,15 +10,11 @@ router.get('/search', async (req, res) => {
   }
 
   try {
-    const response = await withRetry(() =>
-      axios.get(`${SPACY_SERVICE_URL}/vector/search`, {
-        params: { q: q.trim(), top_k },
-      }),
-    );
-    res.json({ query: q, results: response.data.results });
+    const results = await searchEmails(q.trim(), Number(top_k));
+    res.json({ query: q, results });
   } catch (err) {
     console.error('SEARCH ERROR:', err.message);
-    res.status(503).json({ detail: 'Search is temporarily unavailable, please try again shortly.' });
+    res.status(500).json({ detail: err.message });
   }
 });
 

@@ -1,8 +1,6 @@
 token.json
 credentials.json
-app/services/credentials.json
 node_modules/
-__pycache__/
 .DS_Store
 .env
-chroma_db/
+backend/data/
