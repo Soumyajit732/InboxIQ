@@ -53,6 +53,17 @@ cd inboxiq-frontend && npm test
 
 Covers priority scoring, pipeline filtering/sorting, session-store expiry logic, deadline extraction, vector similarity scoring and per-user isolation, and the dashboard's date/priority formatters. Both suites plus frontend lint and build run automatically on every push/PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
+## Evaluating extraction quality
+
+`npm test` checks the code is correct; it says nothing about whether the AI's *judgment* is correct. `backend/eval/` is separate from the test suite for exactly that reason: a hand-labeled golden dataset (`backend/eval/dataset.js`, ~20 emails covering clear tasks, no-task cases, promotional/system emails that should be ignored, ambiguous deadlines, and multi-message threads) scored against the real extraction pipeline.
+
+```
+cd backend
+npm run eval
+```
+
+This calls the real OpenAI API (costs money, isn't deterministic), so it's a manual command, not part of `npm test` or CI. It reports per-check accuracy (task detection, deadline presence, task-content keyword match, priority range) and an overall pass rate — a real number instead of "seems to work when I tried it."
+
 ## Known limitations
 
 - Sessions and tasks/embeddings live in a local SQLite file (`backend/data/inboxiq.db`) — durable across backend restarts, but still local to a single instance and, on Render's free tier, reset on redeploy without a persistent disk attached (see `render.yaml`). The Gmail-results cache remains an in-memory `Map` (short TTL by design). A multi-instance production deploy would move this to a hosted Postgres and Redis respectively.
