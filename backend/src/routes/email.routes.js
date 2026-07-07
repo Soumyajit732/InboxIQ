@@ -22,7 +22,7 @@ router.post('/analyze', async (req, res) => {
 });
 
 router.get('/gmail', requireSession, async (req, res) => {
-  const { id: sessionId, accessToken } = req.session;
+  const { id: sessionId, accessToken, email: userEmail } = req.session;
 
   const now = Date.now();
   const cached = CACHE.get(sessionId);
@@ -54,6 +54,7 @@ router.get('/gmail', requireSession, async (req, res) => {
       if (r.thread_id) {
         try {
           await storeEmail({
+            user_email: userEmail,
             thread_id: r.thread_id,
             email_text: threadTextMap[r.thread_id] || '',
             task: r.task || '',

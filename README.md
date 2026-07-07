@@ -54,5 +54,5 @@ Covers priority scoring, pipeline filtering/sorting, session-store expiry logic,
 ## Known limitations
 
 - Sessions and tasks/embeddings live in a local SQLite file (`backend/data/inboxiq.db`) — durable across backend restarts, but still local to a single instance and, on Render's free tier, reset on redeploy without a persistent disk attached (see `render.yaml`). The Gmail-results cache remains an in-memory `Map` (short TTL by design). A multi-instance production deploy would move this to a hosted Postgres and Redis respectively.
-- Tasks are keyed by Gmail thread ID rather than a proper task model (no user table, no relations) — fine for a single-user personal tool, not multi-tenant.
+- Tasks are scoped by the signed-in Google account's email (`tasks` is keyed on `(user_email, thread_id)`, and `/search`/`/gmail` are both authenticated) rather than a proper relational user model — fine for a handful of personal accounts sharing one deployment, but there's no users table, no per-user rate limiting, and no admin/multi-tenant tooling.
 - Gmail fetch is capped at the 20 most recent inbox threads per sync.

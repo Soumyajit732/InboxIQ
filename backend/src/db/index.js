@@ -16,13 +16,15 @@ export const db = new Database(resolveDbTarget());
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS tasks (
-    thread_id TEXT PRIMARY KEY,
+    user_email TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
     task TEXT,
     deadline TEXT,
     priority INTEGER,
     summary TEXT,
     confidence REAL,
-    embedding TEXT NOT NULL
+    embedding TEXT NOT NULL,
+    PRIMARY KEY (user_email, thread_id)
   );
 
   CREATE TABLE IF NOT EXISTS sessions (

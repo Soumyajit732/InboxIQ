@@ -5,9 +5,9 @@ import { db } from '../db/index.js';
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const upsertTask = db.prepare(`
-  INSERT INTO tasks (thread_id, task, deadline, priority, summary, confidence, embedding)
-  VALUES (@thread_id, @task, @deadline, @priority, @summary, @confidence, @embedding)
-  ON CONFLICT(thread_id) DO UPDATE SET
+  INSERT INTO tasks (user_email, thread_id, task, deadline, priority, summary, confidence, embedding)
+  VALUES (@user_email, @thread_id, @task, @deadline, @priority, @summary, @confidence, @embedding)
+  ON CONFLICT(user_email, thread_id) DO UPDATE SET
     task = excluded.task,
     deadline = excluded.deadline,
     priority = excluded.priority,
@@ -16,7 +16,7 @@ const upsertTask = db.prepare(`
     embedding = excluded.embedding
 `);
 
-const selectAllTasks = db.prepare('SELECT * FROM tasks');
+const selectTasksForUser = db.prepare('SELECT * FROM tasks WHERE user_email = ?');
 
 async function embed(text) {
   const response = await client.embeddings.create({
@@ -36,10 +36,11 @@ export function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-export async function storeEmail({ thread_id, email_text, task, deadline, priority, summary, confidence }) {
+export async function storeEmail({ user_email, thread_id, email_text, task, deadline, priority, summary, confidence }) {
   const doc = `Task: ${task}\nSummary: ${summary}\nEmail: ${(email_text || '').slice(0, 600)}`;
   const embedding = await embed(doc);
   upsertTask.run({
+    user_email,
     thread_id,
     task: task || '',
     deadline: deadline || '',
@@ -50,8 +51,8 @@ export async function storeEmail({ thread_id, email_text, task, deadline, priori
   });
 }
 
-export async function searchEmails(query, topK = 5) {
-  const rows = selectAllTasks.all();
+export async function searchEmails(userEmail, query, topK = 5) {
+  const rows = selectTasksForUser.all(userEmail);
   if (rows.length === 0) return [];
 
   const queryEmbedding = await embed(query);

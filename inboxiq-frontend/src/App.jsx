@@ -367,7 +367,9 @@ export default function App() {
     setSearchLoading(true);
     setSearchQuery(query);
     try {
-      const res = await axios.get(`${BACKEND_URL}/search?q=${encodeURIComponent(query)}&top_k=6`);
+      const res = await axios.get(`${BACKEND_URL}/search?q=${encodeURIComponent(query)}&top_k=6`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       setSearchResults(res.data.results || []);
     } catch (err) {
       console.error(err);
