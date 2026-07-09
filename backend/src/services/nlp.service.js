@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
-import { OPENAI_API_KEY } from '../config.js';
-import { analyzeWithChrono } from './deadline.service.js';
+import axios from 'axios';
+import { OPENAI_API_KEY, SPACY_SERVICE_URL } from '../config.js';
+import { withRetry } from '../utils/http.utils.js';
 
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
@@ -86,6 +87,25 @@ If no task: {"task": null, "deadline": null, "priority": 1, "summary": "No actio
   }
 }
 
+async function analyzeWithSpacy(text) {
+  try {
+    const res = await withRetry(() => axios.post(`${SPACY_SERVICE_URL}/spacy-analyze`, { text }));
+    return res.data;
+  } catch (err) {
+    console.warn('spaCy service unavailable:', err.message);
+    return {
+      task: 'Derived from conversation',
+      deadline: null,
+      priority: 2,
+      summary: text.slice(0, 100),
+      confidence: 0.5,
+      source_snippet: null,
+      reasoning: null,
+      deadline_source: null,
+    };
+  }
+}
+
 export async function analyzeEmailThread(messages) {
   if (!messages?.length) {
     return { task: null, deadline: null, priority: 1, summary: 'No actionable task', confidence: 0.0 };
@@ -94,5 +114,5 @@ export async function analyzeEmailThread(messages) {
   const combinedText = messages.join('\n---\n');
   const aiResult = await analyzeWithAI(combinedText);
   if (aiResult) return normalizeResponse(aiResult);
-  return normalizeResponse(analyzeWithChrono(combinedText));
+  return normalizeResponse(await analyzeWithSpacy(combinedText));
 }

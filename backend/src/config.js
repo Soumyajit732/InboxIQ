@@ -10,6 +10,9 @@ export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 export const APP_ENV = process.env.APP_ENV || 'development';
 
+// FastAPI spaCy + vector microservice
+export const SPACY_SERVICE_URL = process.env.SPACY_SERVICE_URL || 'http://localhost:8001';
+
 export const REDIRECT_URI =
   process.env.REDIRECT_URI ||
   (APP_ENV === 'production'

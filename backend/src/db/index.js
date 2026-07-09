@@ -14,22 +14,22 @@ function resolveDbTarget() {
 
 export const db = new Database(resolveDbTarget());
 
-// Guard against a pre-existing `tasks` table missing columns added in a later version
-// (e.g. user_email, or the explainability/status fields below) -- CREATE TABLE IF NOT
-// EXISTS would otherwise silently no-op against the old schema. This drops and
-// recreates rather than attempting an in-place migration. Note this now also discards
-// any status/snoozed_until the user had set (not just re-derivable extraction data) --
-// acceptable at this project's single-developer scale, but a real migration (ALTER
-// TABLE ADD COLUMN, which doesn't need this drop at all) would be worth it before this
-// ever holds real multi-user data worth preserving across a schema change.
+// Guard against a pre-existing `tasks` table whose columns don't match what's expected
+// -- CREATE TABLE IF NOT EXISTS would otherwise silently no-op against a stale schema.
+// Checked as an exact set match (not just "required columns present"), since this
+// branch also *removes* a column (embedding, now owned by Chroma instead of SQLite) --
+// a pure subset check would miss a leftover NOT NULL `embedding` column from an older
+// run and every insert would then fail. Drops and recreates rather than an in-place
+// migration; note this discards status/snoozed_until too, not just re-derivable
+// extraction data -- acceptable at this project's single-developer scale.
 const REQUIRED_TASK_COLUMNS = [
   'user_email', 'thread_id', 'task', 'deadline', 'priority', 'summary', 'confidence',
-  'embedding', 'source_snippet', 'reasoning', 'deadline_source', 'status', 'snoozed_until',
-  'sender',
+  'source_snippet', 'reasoning', 'deadline_source', 'status', 'snoozed_until', 'sender',
 ];
 const existingTaskColumns = db.prepare("PRAGMA table_info(tasks)").all();
+const existingColumnNames = existingTaskColumns.map(col => col.name).sort();
 const hasStaleSchema = existingTaskColumns.length > 0
-  && !REQUIRED_TASK_COLUMNS.every(name => existingTaskColumns.some(col => col.name === name));
+  && JSON.stringify(existingColumnNames) !== JSON.stringify([...REQUIRED_TASK_COLUMNS].sort());
 if (hasStaleSchema) {
   db.exec('DROP TABLE tasks');
 }
@@ -43,7 +43,6 @@ db.exec(`
     priority INTEGER,
     summary TEXT,
     confidence REAL,
-    embedding TEXT NOT NULL,
     source_snippet TEXT,
     reasoning TEXT,
     deadline_source TEXT,

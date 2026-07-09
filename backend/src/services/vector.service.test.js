@@ -1,48 +1,39 @@
 import { describe, it, expect, vi } from 'vitest';
 
-// storeEmail/searchEmails call the real OpenAI embeddings API -- stub it so the
-// store/search/isolation tests below exercise our own SQL logic, not a live network call.
-vi.mock('openai', () => ({
-  default: class MockOpenAI {
-    embeddings = {
-      create: async ({ input }) => ({
-        data: [{ embedding: fakeEmbedding(input) }],
-      }),
-    };
+// storeEmail/searchEmails now delegate to the Python service (embeddings + Chroma) over
+// HTTP instead of calling OpenAI directly. This simulates that service in-memory,
+// replicating its actual filtering contract (user scoping, priority_min, before/after,
+// sender substring) so these tests exercise real behavior, not just "did Node call axios."
+const fakeVectorStore = new Map();
+
+vi.mock('axios', () => ({
+  default: {
+    post: vi.fn(async (url, body) => {
+      if (url.endsWith('/vector/store')) {
+        fakeVectorStore.set(`${body.user_email}::${body.thread_id}`, body);
+        return { data: { status: 'stored' } };
+      }
+      throw new Error(`Unexpected POST ${url}`);
+    }),
+    get: vi.fn(async (url, config) => {
+      if (url.endsWith('/vector/search')) {
+        const { user_email, priority_min, before, after, sender } = config.params;
+        const results = [...fakeVectorStore.values()]
+          .filter(v => v.user_email === user_email)
+          .filter(v => priority_min == null || v.priority >= priority_min)
+          .filter(v => before == null || (v.deadline && v.deadline <= before))
+          .filter(v => after == null || (v.deadline && v.deadline >= after))
+          .filter(v => !sender || (v.sender || '').toLowerCase().includes(String(sender).toLowerCase()))
+          // Stable fake ranking -- real ranking is Python/Chroma's job, not under test here.
+          .map((v, i) => ({ thread_id: v.thread_id, relevance_score: 1 - i * 0.01 }));
+        return { data: { query: config.params.q, results } };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    }),
   },
 }));
 
-function fakeEmbedding(text) {
-  // Deterministic 4-dim "embedding" derived from character codes -- good enough to prove
-  // storage/retrieval and isolation behavior without needing real semantic similarity.
-  const vec = [0, 0, 0, 0];
-  for (let i = 0; i < text.length; i++) {
-    vec[i % 4] += text.charCodeAt(i);
-  }
-  return vec;
-}
-
-const { cosineSimilarity, storeEmail, searchEmails, getTasksForUser, updateTaskStatus } = await import('./vector.service.js');
-
-describe('cosineSimilarity', () => {
-  it('returns 1 for identical vectors', () => {
-    expect(cosineSimilarity([1, 2, 3], [1, 2, 3])).toBeCloseTo(1);
-  });
-
-  it('returns 0 for orthogonal vectors', () => {
-    expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0);
-  });
-
-  it('returns -1 for opposite vectors', () => {
-    expect(cosineSimilarity([1, 2, 3], [-1, -2, -3])).toBeCloseTo(-1);
-  });
-
-  it('is scale-invariant', () => {
-    const a = [1, 2, 3];
-    const b = [2, 4, 6];
-    expect(cosineSimilarity(a, b)).toBeCloseTo(1);
-  });
-});
+const { storeEmail, searchEmails, getTasksForUser, updateTaskStatus } = await import('./vector.service.js');
 
 describe('storeEmail / searchEmails user isolation', () => {
   it('only returns a user\'s own tasks, even when another user has a task under the same thread_id', async () => {

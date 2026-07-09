@@ -1,9 +1,15 @@
-import OpenAI from 'openai';
-import { OPENAI_API_KEY } from '../config.js';
+import axios from 'axios';
+import { SPACY_SERVICE_URL } from '../config.js';
 import { db } from '../db/index.js';
 import { effectiveStatus } from '../utils/task.utils.js';
+import { withRetry } from '../utils/http.utils.js';
 
-const client = new OpenAI({ apiKey: OPENAI_API_KEY });
+// Chroma (via the Python service) only ever sees enough of a task to rank it --
+// embeddings, priority, deadline, sender. It never learns about status, so a status
+// filter can't be applied until after Node re-joins against SQLite below. Request a
+// generously larger candidate pool than topK so that post-join status filtering
+// doesn't silently return fewer results than asked for.
+const SEARCH_CANDIDATE_POOL = 50;
 
 // status/snoozed_until are deliberately absent from both the column list and the
 // ON CONFLICT SET clause below: a rescan should refresh what the email says, never
@@ -11,11 +17,11 @@ const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 // DEFAULT 'open'; existing rows keep whatever status they had untouched.
 const upsertTask = db.prepare(`
   INSERT INTO tasks (
-    user_email, thread_id, task, deadline, priority, summary, confidence, embedding,
+    user_email, thread_id, task, deadline, priority, summary, confidence,
     source_snippet, reasoning, deadline_source, sender
   )
   VALUES (
-    @user_email, @thread_id, @task, @deadline, @priority, @summary, @confidence, @embedding,
+    @user_email, @thread_id, @task, @deadline, @priority, @summary, @confidence,
     @source_snippet, @reasoning, @deadline_source, @sender
   )
   ON CONFLICT(user_email, thread_id) DO UPDATE SET
@@ -24,7 +30,6 @@ const upsertTask = db.prepare(`
     priority = excluded.priority,
     summary = excluded.summary,
     confidence = excluded.confidence,
-    embedding = excluded.embedding,
     source_snippet = excluded.source_snippet,
     reasoning = excluded.reasoning,
     deadline_source = excluded.deadline_source,
@@ -32,41 +37,16 @@ const upsertTask = db.prepare(`
 `);
 
 const selectTasksForUser = db.prepare('SELECT * FROM tasks WHERE user_email = ? ORDER BY priority DESC');
-
-// Optional-predicate pattern: each filter is skipped entirely (via the `@x IS NULL OR`
-// guard) when not provided, so this single prepared statement handles every filter
-// combination rather than building SQL text per request.
-const selectTasksForUserFiltered = db.prepare(`
-  SELECT * FROM tasks
-  WHERE user_email = @user_email
-    AND (@priority_min IS NULL OR priority >= @priority_min)
-    AND (@before IS NULL OR (deadline IS NOT NULL AND deadline != '' AND deadline <= @before))
-    AND (@after IS NULL OR (deadline IS NOT NULL AND deadline != '' AND deadline >= @after))
-    AND (@sender IS NULL OR sender LIKE @sender)
-  ORDER BY priority DESC
-`);
-
 const updateStatusStmt = db.prepare(`
   UPDATE tasks SET status = ?, snoozed_until = ?
   WHERE user_email = ? AND thread_id = ?
 `);
 
-async function embed(text) {
-  const response = await client.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text,
-  });
-  return response.data[0].embedding;
-}
-
-export function cosineSimilarity(a, b) {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+function getTasksByThreadIds(userEmail, threadIds) {
+  if (threadIds.length === 0) return [];
+  const placeholders = threadIds.map(() => '?').join(',');
+  const stmt = db.prepare(`SELECT * FROM tasks WHERE user_email = ? AND thread_id IN (${placeholders})`);
+  return stmt.all(userEmail, ...threadIds);
 }
 
 function rowToTask(row, now = new Date()) {
@@ -102,8 +82,7 @@ export async function storeEmail({
   user_email, thread_id, email_text, task, deadline, priority, summary, confidence,
   source_snippet, reasoning, deadline_source, sender,
 }) {
-  const doc = `Task: ${task}\nSummary: ${summary}\nEmail: ${(email_text || '').slice(0, 600)}`;
-  const embedding = await embed(doc);
+  // SQLite is the source of truth for the task itself -- written first, unconditionally.
   upsertTask.run({
     user_email,
     thread_id,
@@ -112,39 +91,58 @@ export async function storeEmail({
     priority,
     summary: summary || '',
     confidence,
-    embedding: JSON.stringify(embedding),
     source_snippet: source_snippet || null,
     reasoning: reasoning || null,
     deadline_source: deadline_source || null,
     sender: sender || null,
   });
+
+  // The Python service owns embeddings/Chroma; this can fail independently of the
+  // SQLite write above (e.g. the service is cold-starting) without losing the task --
+  // it just won't be findable by search until the next successful sync.
+  const doc = `Task: ${task}\nSummary: ${summary}\nEmail: ${(email_text || '').slice(0, 600)}`;
+  await withRetry(() => axios.post(`${SPACY_SERVICE_URL}/vector/store`, {
+    user_email,
+    thread_id,
+    doc_text: doc,
+    priority: priority || 1,
+    deadline: deadline || '',
+    sender: sender || '',
+  }));
 }
 
 export async function searchEmails(userEmail, query, topK = 5, filters = {}) {
   const { status, priorityMin, before, after, sender } = filters;
 
-  const rows = selectTasksForUserFiltered.all({
-    user_email: userEmail,
-    priority_min: priorityMin ?? null,
-    before: before ?? null,
-    after: after ?? null,
-    sender: sender ? `%${sender}%` : null,
-  });
-  if (rows.length === 0) return [];
-
-  const now = new Date();
-  let tasks = rows.map(row => ({ row, task: rowToTask(row, now) }));
-  if (status) {
-    tasks = tasks.filter(({ task }) => task.status === status);
-  }
-  if (tasks.length === 0) return [];
-
-  const queryEmbedding = await embed(query);
-  const results = tasks.map(({ row, task }) => ({
-    ...task,
-    relevance_score: Math.round(cosineSimilarity(queryEmbedding, JSON.parse(row.embedding)) * 1000) / 1000,
+  const res = await withRetry(() => axios.get(`${SPACY_SERVICE_URL}/vector/search`, {
+    params: {
+      user_email: userEmail,
+      q: query,
+      top_k: SEARCH_CANDIDATE_POOL,
+      priority_min: priorityMin,
+      before,
+      after,
+      sender,
+    },
   }));
+  const ranked = res.data.results || [];
+  if (ranked.length === 0) return [];
 
-  results.sort((a, b) => b.relevance_score - a.relevance_score);
-  return results.slice(0, topK);
+  const rows = getTasksByThreadIds(userEmail, ranked.map(r => r.thread_id));
+  const rowsByThreadId = Object.fromEntries(rows.map(row => [row.thread_id, row]));
+  const now = new Date();
+
+  let merged = ranked
+    .map(r => {
+      const row = rowsByThreadId[r.thread_id];
+      if (!row) return null; // Chroma had it, SQLite didn't -- shouldn't happen, don't crash on it
+      return { ...rowToTask(row, now), relevance_score: r.relevance_score };
+    })
+    .filter(Boolean);
+
+  if (status) {
+    merged = merged.filter(t => t.status === status);
+  }
+
+  return merged.slice(0, topK);
 }

@@ -4,3 +4,5 @@ node_modules/
 .DS_Store
 .env
 backend/data/
+chroma_db/
+__pycache__/
