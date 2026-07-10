@@ -540,6 +540,27 @@ export default function App() {
 
   const isAuthenticated = !!token;
 
+  // A stored session can go stale (backend restart, natural expiry, etc.) without the
+  // frontend knowing -- without this, a 401 from any API call just silently fails
+  // (console.error only) and strands the user on a broken dashboard with no way back
+  // to the sign-in screen short of manually clearing localStorage.
+  useEffect(() => {
+    const interceptorId = axios.interceptors.response.use(
+      res => res,
+      err => {
+        if (err.response?.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("userEmail");
+          setToken("");
+          setUserEmail("");
+          setTasks([]);
+        }
+        return Promise.reject(err);
+      },
+    );
+    return () => axios.interceptors.response.eject(interceptorId);
+  }, []);
+
   const handleSignOut = () => {
     axios.post(`${BACKEND_URL}/auth/logout`, {}, {
       headers: { Authorization: `Bearer ${token}` },
