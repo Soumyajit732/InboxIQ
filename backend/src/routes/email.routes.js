@@ -9,13 +9,18 @@ const router = Router();
 const CACHE = new Map();
 const CACHE_TTL = 60_000;
 
+function withoutInternalFields(task) {
+  const { _sanitized_search_text, ...publicTask } = task;
+  return publicTask;
+}
+
 router.post('/analyze', requireSession, async (req, res) => {
   const { messages } = req.body;
   if (!messages?.length) {
     return res.status(400).json({ detail: 'No messages provided' });
   }
   try {
-    res.json(await analyzeEmailThread(messages));
+    res.json(withoutInternalFields(await analyzeEmailThread(messages)));
   } catch (err) {
     res.status(500).json({ detail: err.message });
   }
@@ -49,7 +54,6 @@ router.get('/gmail', requireSession, async (req, res) => {
     results = filterLowConfidence(results);
     results = sortByPriority(results);
 
-    const threadTextMap = Object.fromEntries(threads.map(t => [t.thread_id, t.messages[0]]));
     const threadSenderMap = Object.fromEntries(threads.map(t => [t.thread_id, t.sender || null]));
     for (const r of results) {
       if (r.thread_id) {
@@ -57,7 +61,7 @@ router.get('/gmail', requireSession, async (req, res) => {
           await storeEmail({
             user_email: userEmail,
             thread_id: r.thread_id,
-            email_text: threadTextMap[r.thread_id] || '',
+            search_text: r._sanitized_search_text || '',
             task: r.task || '',
             deadline: r.deadline || '',
             priority: r.priority || 1,
@@ -74,7 +78,8 @@ router.get('/gmail', requireSession, async (req, res) => {
       }
     }
 
-    const response = { total_tasks: results.length, tasks: results };
+    const publicResults = results.map(withoutInternalFields);
+    const response = { total_tasks: publicResults.length, tasks: publicResults };
     CACHE.set(sessionId, { data: response, timestamp: now });
     res.json(response);
   } catch (err) {

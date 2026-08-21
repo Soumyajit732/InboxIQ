@@ -79,7 +79,7 @@ export function updateTaskStatus(userEmail, threadId, status, snoozedUntil = nul
 }
 
 export async function storeEmail({
-  user_email, thread_id, email_text, task, deadline, priority, summary, confidence,
+  user_email, thread_id, search_text, task, deadline, priority, summary, confidence,
   source_snippet, reasoning, deadline_source, sender,
 }) {
   // SQLite is the source of truth for the task itself -- written first, unconditionally.
@@ -100,11 +100,13 @@ export async function storeEmail({
   // The Python service owns embeddings/Chroma; this can fail independently of the
   // SQLite write above (e.g. the service is cold-starting) without losing the task --
   // it just won't be findable by search until the next successful sync.
-  const doc = `Task: ${task}\nSummary: ${summary}\nEmail: ${(email_text || '').slice(0, 600)}`;
+  // `search_text` comes from the privacy service; never rebuild it from task/email
+  // fields here because those values are restored for the user-facing dashboard.
+  if (!search_text?.trim()) return;
   await withRetry(() => axios.post(`${SPACY_SERVICE_URL}/vector/store`, {
     user_email,
     thread_id,
-    doc_text: doc,
+    doc_text: search_text,
     priority: priority || 1,
     deadline: deadline || '',
     sender: sender || '',

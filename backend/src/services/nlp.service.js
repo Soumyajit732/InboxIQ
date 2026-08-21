@@ -5,6 +5,53 @@ import { withRetry } from '../utils/http.utils.js';
 
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+function restoreRedactions(result, redactions = {}) {
+  const restore = value => {
+    if (typeof value !== 'string') return value;
+    return Object.entries(redactions).reduce(
+      (restored, [placeholder, original]) => restored.replaceAll(placeholder, original),
+      value,
+    );
+  };
+
+  return {
+    ...result,
+    task: restore(result.task),
+    summary: restore(result.summary),
+    source_snippet: restore(result.source_snippet),
+    reasoning: restore(result.reasoning),
+  };
+}
+
+function buildSanitizedSearchText(result, sanitizedText) {
+  // Only text that has already been sanitized is sent to the embeddings API.
+  // `result` here preserves placeholders, before identifiers are restored for
+  // the user-facing dashboard.
+  return [
+    `Task: ${result.task || ''}`,
+    `Summary: ${result.summary || ''}`,
+    `Email: ${sanitizedText.slice(0, 600)}`,
+  ].join('\n');
+}
+
+async function sanitizeForExternalAI(text) {
+  try {
+    const res = await withRetry(() => axios.post(`${SPACY_SERVICE_URL}/sanitize-email`, { text }));
+    if (typeof res.data?.sanitized_text !== 'string') {
+      throw new Error('Privacy service returned no sanitized text');
+    }
+    return {
+      text: res.data.sanitized_text,
+      redactions: res.data.redactions || {},
+    };
+  } catch (err) {
+    // Fail closed: never send raw email text to an external AI provider when
+    // the privacy service is unavailable or returns an invalid payload.
+    console.warn('Email sanitization failed; using local fallback only:', err.message);
+    return null;
+  }
+}
+
 export function computePriority(task, deadline) {
   let score = 1;
 
@@ -69,6 +116,8 @@ Rules:
 - source_snippet must be a short verbatim quote from the email that justifies the task
   (not a paraphrase) -- this is shown to the user as evidence for the extraction
 - reasoning must be one sentence explaining why this was flagged as a task
+- The email may contain placeholders such as [PERSON_1] or [EMAIL_1]. Preserve those
+  placeholders exactly; never attempt to infer the original value.
 
 Return STRICT JSON:
 {"task": string or null, "deadline": ISO datetime or null, "priority": 1-5, "summary": string, "confidence": 0-1, "source_snippet": string or null, "reasoning": string or null}
@@ -112,7 +161,25 @@ export async function analyzeEmailThread(messages) {
   }
 
   const combinedText = messages.join('\n---\n');
-  const aiResult = await analyzeWithAI(combinedText);
-  if (aiResult) return normalizeResponse(aiResult);
-  return normalizeResponse(await analyzeWithSpacy(combinedText));
+  const privacySafeInput = await sanitizeForExternalAI(combinedText);
+  if (!privacySafeInput) {
+    return normalizeResponse(await analyzeWithSpacy(combinedText));
+  }
+
+  const aiResult = await analyzeWithAI(privacySafeInput.text);
+  if (aiResult) {
+    const sanitizedResult = normalizeResponse(aiResult);
+    return {
+      ...restoreRedactions(sanitizedResult, privacySafeInput.redactions),
+      // Internal-only: routes remove this before returning a task to the browser.
+      _sanitized_search_text: buildSanitizedSearchText(sanitizedResult, privacySafeInput.text),
+    };
+  }
+
+  const fallbackResult = normalizeResponse(await analyzeWithSpacy(combinedText));
+  return {
+    ...fallbackResult,
+    // Fallback summaries can contain raw email text, so do not embed them.
+    _sanitized_search_text: `Email: ${privacySafeInput.text.slice(0, 600)}`,
+  };
 }

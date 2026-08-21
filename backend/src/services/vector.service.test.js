@@ -40,7 +40,7 @@ describe('storeEmail / searchEmails user isolation', () => {
     await storeEmail({
       user_email: 'alice@example.com',
       thread_id: 'shared-thread-id',
-      email_text: 'Submit the Q3 report',
+      search_text: 'Submit the Q3 report',
       task: 'Submit the Q3 report',
       deadline: null,
       priority: 5,
@@ -51,7 +51,7 @@ describe('storeEmail / searchEmails user isolation', () => {
     await storeEmail({
       user_email: 'bob@example.com',
       thread_id: 'shared-thread-id',
-      email_text: 'Submit the Q3 report',
+      search_text: 'Submit the Q3 report',
       task: 'Submit the Q3 report',
       deadline: null,
       priority: 5,
@@ -76,7 +76,7 @@ describe('storeEmail / searchEmails user isolation', () => {
     await storeEmail({
       user_email: 'carol@example.com',
       thread_id: 'another-shared-id',
-      email_text: 'x',
+      search_text: 'x',
       task: 'Carol task',
       deadline: null,
       priority: 1,
@@ -86,7 +86,7 @@ describe('storeEmail / searchEmails user isolation', () => {
     await storeEmail({
       user_email: 'dave@example.com',
       thread_id: 'another-shared-id',
-      email_text: 'x',
+      search_text: 'x',
       task: 'Dave task',
       deadline: null,
       priority: 1,
@@ -110,7 +110,7 @@ describe('storeEmail rescan preserves task status', () => {
     await storeEmail({
       user_email: email,
       thread_id,
-      email_text: 'Submit the report',
+      search_text: 'Submit the report',
       task: 'Submit the report',
       deadline: null,
       priority: 3,
@@ -125,7 +125,7 @@ describe('storeEmail rescan preserves task status', () => {
     await storeEmail({
       user_email: email,
       thread_id,
-      email_text: 'Submit the report (reply added)',
+      search_text: 'Submit the report (reply added)',
       task: 'Submit the report',
       deadline: '2026-08-01T17:00:00',
       priority: 4,
@@ -146,7 +146,7 @@ describe('searchEmails hybrid filters', () => {
     await storeEmail({
       user_email: email,
       thread_id: 'filter-thread-budget',
-      email_text: 'Submit the budget report',
+      search_text: 'Submit the budget report',
       task: 'Submit budget report',
       deadline: '2026-07-01T17:00:00',
       priority: 5,
@@ -157,7 +157,7 @@ describe('searchEmails hybrid filters', () => {
     await storeEmail({
       user_email: email,
       thread_id: 'filter-thread-interview',
-      email_text: 'Schedule an interview',
+      search_text: 'Schedule an interview',
       task: 'Schedule interview',
       deadline: '2026-08-15T09:00:00',
       priority: 2,
@@ -168,7 +168,7 @@ describe('searchEmails hybrid filters', () => {
     await storeEmail({
       user_email: email,
       thread_id: 'filter-thread-review',
-      email_text: 'Review the budget report',
+      search_text: 'Review the budget report',
       task: 'Review budget report',
       deadline: null,
       priority: 4,
